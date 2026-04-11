@@ -12,7 +12,7 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "SIGMA — Sistem Intelijen Governance & Monitoring Anggaran",
   description:
-    "Unified platform combining financial forensics and regulatory intelligence for transparent governance.",
+    "Platform terpadu yang menggabungkan forensik keuangan dan intelijen regulasi untuk tata kelola yang transparan.",
 };
 
 export default function RootLayout({
@@ -26,7 +26,7 @@ export default function RootLayout({
         {/* Fixed sidebar */}
         <Sidebar />
 
-        {/* Main content area — offset by sidebar width */}
+        {/* Area konten utama — digeser sesuai lebar sidebar */}
         <main className="ml-72 min-h-screen">
           <div className="mx-auto max-w-7xl px-6 py-8 lg:px-10">
             {children}

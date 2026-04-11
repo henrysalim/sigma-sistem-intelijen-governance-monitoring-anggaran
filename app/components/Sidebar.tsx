@@ -15,34 +15,34 @@ import {
 
 const navItems = [
   {
-    label: "Dashboard & Intelligence",
-    href: "/dashboard",
+    label: "Dasbor & Intelijen",
+    href: "/dasbor",
     icon: LayoutDashboard,
-    description: "Overview & Analytics",
+    description: "Ringkasan & Analitik",
   },
   {
-    label: "Money Intelligence",
-    href: "/money-intelligence",
+    label: "Intelijen Keuangan",
+    href: "/intelijen-keuangan",
     icon: Landmark,
-    description: "APBD Forensik",
+    description: "Forensik APBD",
   },
   {
-    label: "Regulation Intelligence",
-    href: "/regulation-intelligence",
+    label: "Intelijen Regulasi",
+    href: "/intelijen-regulasi",
     icon: BookOpenText,
-    description: "Regulation Genome",
+    description: "Genom Regulasi",
   },
   {
-    label: "Cross-Check Engine",
-    href: "/cross-check",
+    label: "Mesin Cek-Silang",
+    href: "/cek-silang",
     icon: GitCompareArrows,
-    description: "Synergy Hub",
+    description: "Hub Sinergi",
   },
   {
-    label: "Citizen Engagement",
-    href: "/citizen-engagement",
+    label: "Partisipasi Warga",
+    href: "/partisipasi-warga",
     icon: Users,
-    description: "Public Participation",
+    description: "Keterlibatan Publik",
   },
 ];
 
@@ -72,7 +72,7 @@ export default function Sidebar() {
       {/* ── Navigation ────────────────────────────────── */}
       <nav className="flex-1 overflow-y-auto px-3 py-4">
         <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-widest text-slate-400">
-          Core Modules
+          Modul Utama
         </p>
 
         <ul className="flex flex-col gap-1">
@@ -153,15 +153,15 @@ export default function Sidebar() {
           <Cloud className="h-4 w-4 text-blue-500" />
           <div className="flex flex-col">
             <span className="text-[11px] font-semibold text-slate-600">
-              Powered by Microsoft Azure
+              Didukung oleh Microsoft Azure
             </span>
             <span className="text-[10px] text-slate-400">
-              Cloud Infrastructure
+              Infrastruktur Cloud
             </span>
           </div>
         </div>
         <p className="mt-3 text-center text-[10px] text-slate-400">
-          © 2026 SIGMA Platform · v0.1.0
+          © 2026 Platform SIGMA · v0.1.0
         </p>
       </div>
     </aside>
