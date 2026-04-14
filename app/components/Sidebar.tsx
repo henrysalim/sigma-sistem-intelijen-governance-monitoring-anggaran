@@ -16,7 +16,7 @@ import {
 const navItems = [
   {
     label: "Dasbor & Intelijen",
-    href: "/dasbor",
+    href: "/dashboard",
     icon: LayoutDashboard,
     description: "Ringkasan & Analitik",
   },

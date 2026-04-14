@@ -1,560 +1,215 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import {
-  Landmark,
-  Clock,
-  Upload,
-  FileSpreadsheet,
-  AlertTriangle,
-  ShieldAlert,
-  CheckCircle2,
-  TrendingUp,
+import { useState } from "react";
+import { 
+  FileUp, 
+  FileSearch, 
+  AlertCircle, 
+  CheckCircle2, 
+  Loader2, 
   ArrowRight,
-  DollarSign,
-  Search,
-  BarChart3,
-  Zap,
-  XCircle,
-  Activity,
-  Eye,
+  Landmark
 } from "lucide-react";
+import { analyzeApbd } from "@/lib/api";
 
-/* ─── Mock data ─────────────────────────────────── */
-const ANOMALY_CARDS = [
-  {
-    id: 1,
-    title: "Markup Detected",
-    value: "3 Items",
-    description: "Item dengan harga di atas harga pasar wajar",
-    status: "critical" as const,
-    icon: ShieldAlert,
-    delta: "+2 dari bulan lalu",
-  },
-  {
-    id: 2,
-    title: "Split Purchase Probability",
-    value: "85%",
-    description: "Probabilitas pemecahan paket pengadaan",
-    status: "warning" as const,
-    icon: TrendingUp,
-    delta: "+12% dari bulan lalu",
-  },
-  {
-    id: 3,
-    title: "Ghost Vendors",
-    value: "0",
-    description: "Vendor fiktif atau tidak terverifikasi",
-    status: "clear" as const,
-    icon: CheckCircle2,
-    delta: "Bersih · tidak ada temuan",
-  },
-  {
-    id: 4,
-    title: "Total Suspicious Value",
-    value: "Rp 4.7M",
-    description: "Nilai total transaksi mencurigakan",
-    status: "critical" as const,
-    icon: DollarSign,
-    delta: "Rp 1.2M dari markup",
-  },
-];
-
-const FLOW_STEPS = [
-  {
-    label: "Kas Daerah",
-    value: "Rp 1.2M",
-    type: "source" as const,
-  },
-  {
-    label: "Dinas PU",
-    value: "Alokasi Proyek",
-    type: "process" as const,
-  },
-  {
-    label: "PT Bumi Jaya",
-    value: "Kontraktor",
-    type: "process" as const,
-  },
-  {
-    label: "Sub-kontraktor Fiktif",
-    value: "Rp 400jt",
-    type: "alert" as const,
-  },
-];
-
-/* ─── Helpers ───────────────────────────────────── */
-function statusConfig(status: "critical" | "warning" | "clear") {
-  switch (status) {
-    case "critical":
-      return {
-        bg: "bg-red-50",
-        ring: "ring-red-200",
-        text: "text-red-700",
-        badge: "bg-red-100 text-red-700",
-        badgeLabel: "KRITIS",
-        iconBg: "bg-red-100 text-red-600",
-        accentTop: "from-red-500 to-rose-500",
-      };
-    case "warning":
-      return {
-        bg: "bg-amber-50",
-        ring: "ring-amber-200",
-        text: "text-amber-700",
-        badge: "bg-amber-100 text-amber-700",
-        badgeLabel: "PERINGATAN",
-        iconBg: "bg-amber-100 text-amber-600",
-        accentTop: "from-amber-500 to-orange-500",
-      };
-    case "clear":
-      return {
-        bg: "bg-emerald-50",
-        ring: "ring-emerald-200",
-        text: "text-emerald-700",
-        badge: "bg-emerald-100 text-emerald-700",
-        badgeLabel: "BERSIH",
-        iconBg: "bg-emerald-100 text-emerald-600",
-        accentTop: "from-emerald-500 to-teal-500",
-      };
-  }
-}
-
-/* ━━━━━━━━━━━━━━━━━━━━━━ PAGE ━━━━━━━━━━━━━━━━━━━━ */
 export default function MoneyIntelligencePage() {
-  const [parseProgress, setParseProgress] = useState(0);
-  const [isParsing, setIsParsing] = useState(false);
-  const [isDragOver, setIsDragOver] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  // Simulate a parsing animation
-  useEffect(() => {
-    if (!isParsing) return;
-    if (parseProgress >= 100) {
-      setIsParsing(false);
-      return;
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setFile(e.target.files[0]);
+      setError(null);
     }
-    const timer = setTimeout(() => {
-      setParseProgress((prev) => Math.min(prev + Math.random() * 8 + 2, 100));
-    }, 200);
-    return () => clearTimeout(timer);
-  }, [isParsing, parseProgress]);
+  };
 
-  function handleUploadClick() {
-    setParseProgress(0);
-    setIsParsing(true);
-  }
+  const handleUpload = async () => {
+    if (!file) return;
+
+    setLoading(true);
+    setError(null);
+    setResult(null);
+
+    try {
+      const data = await analyzeApbd(file);
+      setResult(data);
+    } catch (err: any) {
+      setError(err.message || "Terjadi kesalahan saat menganalisis dokumen.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <section className="flex flex-col gap-6">
-      {/* ── Top header ──────────────────────────────── */}
-      <header className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+    <div className="max-w-4xl mx-auto space-y-8">
+      {/* Header */}
+      <div className="flex items-center gap-4 border-b border-slate-200 pb-6">
+        <div className="h-12 w-12 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-lg shadow-blue-200">
+          <Landmark size={24} />
+        </div>
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">
-            Modul 1
-          </p>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-800">
-            Money Intelligence — APBD Forensik
-          </h1>
-          <p className="mt-0.5 text-sm text-slate-500">
-            Parsing dokumen keuangan, deteksi anomali, dan pelacakan arus uang
-          </p>
+          <h1 className="text-2xl font-bold text-slate-900 leading-tight">Intelijen Keuangan</h1>
+          <p className="text-slate-500">Forensik Anggaran & Deteksi Anomali APBD</p>
         </div>
+      </div>
 
-        <div className="flex items-center gap-2 rounded-lg bg-white px-3 py-1.5 text-xs text-slate-500 shadow-sm ring-1 ring-slate-200">
-          <Clock className="h-3.5 w-3.5" />
-          <span>
-            Langsung ·{" "}
-            {new Date().toLocaleDateString("id-ID", {
-              day: "numeric",
-              month: "long",
-              year: "numeric",
-            })}
-          </span>
-        </div>
-      </header>
-
-      {/* ════════════════════════════════════════════════
-          SECTION 1: Document Parsing Zone
-         ════════════════════════════════════════════════ */}
-      <div className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
-        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 shadow-sm shadow-blue-200">
-              <FileSpreadsheet className="h-4 w-4 text-white" />
-            </div>
-            <div>
-              <h2 className="text-sm font-bold text-slate-700">
-                Document Parsing Zone
-              </h2>
-              <p className="text-[11px] text-slate-400">
-                Upload dan analisis otomatis dokumen keuangan daerah
-              </p>
-            </div>
-          </div>
-          <span className="flex items-center gap-1.5 rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-semibold text-blue-600 ring-1 ring-blue-200">
-            <Zap className="h-3 w-3" />
-            Azure Document Intelligence
-          </span>
-        </div>
-
-        <div className="px-6 py-5">
-          {/* Drag-and-drop area */}
-          <button
-            onClick={handleUploadClick}
-            onDragOver={(e) => {
-              e.preventDefault();
-              setIsDragOver(true);
-            }}
-            onDragLeave={() => setIsDragOver(false)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setIsDragOver(false);
-              handleUploadClick();
-            }}
-            className={`group relative w-full cursor-pointer rounded-xl border-2 border-dashed p-8 text-center transition-all duration-200 ${
-              isDragOver
-                ? "border-blue-400 bg-blue-50"
-                : "border-slate-300 bg-slate-50 hover:border-blue-400 hover:bg-blue-50/50"
-            }`}
-          >
-            <div className="flex flex-col items-center gap-3">
-              <div
-                className={`flex h-14 w-14 items-center justify-center rounded-2xl transition-colors ${
-                  isDragOver
-                    ? "bg-blue-100 text-blue-600"
-                    : "bg-slate-100 text-slate-400 group-hover:bg-blue-100 group-hover:text-blue-600"
-                }`}
-              >
-                <Upload className="h-6 w-6" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-slate-700">
-                  Upload LKPD / APBD{" "}
-                  <span className="font-normal text-slate-400">(PDF / Excel)</span>
-                </p>
-                <p className="mt-1 text-xs text-slate-400">
-                  Drag & drop file di sini, atau klik untuk browse
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="rounded-full bg-white px-3 py-1 text-[10px] font-medium text-slate-500 ring-1 ring-slate-200">
-                  .PDF
-                </span>
-                <span className="rounded-full bg-white px-3 py-1 text-[10px] font-medium text-slate-500 ring-1 ring-slate-200">
-                  .XLSX
-                </span>
-                <span className="rounded-full bg-white px-3 py-1 text-[10px] font-medium text-slate-500 ring-1 ring-slate-200">
-                  .XLS
-                </span>
-              </div>
-            </div>
-          </button>
-
-          {/* Parsing progress */}
-          {isParsing && (
-            <div className="mt-4 rounded-xl bg-slate-900 px-5 py-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="relative">
-                    <Search className="h-4 w-4 text-blue-400" />
-                    <span className="absolute -right-0.5 -top-0.5 h-2 w-2 animate-ping rounded-full bg-blue-400" />
-                  </div>
-                  <p className="text-xs font-medium text-slate-300">
-                    Parsing Tables & Entities via Azure Document Intelligence...
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        {/* Upload Section */}
+        <div className="space-y-6">
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+            <h2 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
+              <FileUp size={20} className="text-blue-600" />
+              Unggah Dokumen Anggaran
+            </h2>
+            
+            <div 
+              className={`
+                border-2 border-dashed rounded-xl p-8 transition-all duration-200 text-center
+                ${file ? 'border-blue-400 bg-blue-50/50' : 'border-slate-200 hover:border-blue-300 hover:bg-slate-50'}
+              `}
+            >
+              <input 
+                type="file" 
+                id="apbd-upload" 
+                className="hidden" 
+                accept=".pdf"
+                onChange={handleFileChange}
+              />
+              <label htmlFor="apbd-upload" className="cursor-pointer space-y-3 block">
+                <div className="mx-auto h-12 w-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 group-hover:text-blue-600">
+                  {file ? <CheckCircle2 className="text-blue-600" /> : <FileUp />}
+                </div>
+                <div className="space-y-1">
+                  <p className="font-medium text-slate-700">
+                    {file ? file.name : "Pilih file PDF APBD"}
                   </p>
+                  <p className="text-xs text-slate-400">PDF maksimal 10MB</p>
                 </div>
-                <span className="text-xs font-bold text-blue-400">
-                  {Math.round(parseProgress)}%
-                </span>
+              </label>
+            </div>
+
+            <button
+              onClick={handleUpload}
+              disabled={!file || loading}
+              className={`
+                w-full mt-6 py-3 px-4 rounded-xl font-semibold flex items-center justify-center gap-2 transition-all
+                ${!file || loading 
+                  ? 'bg-slate-100 text-slate-400 cursor-not-allowed' 
+                  : 'bg-blue-600 text-white hover:bg-blue-700 shadow-md shadow-blue-200 active:scale-[0.98]'}
+              `}
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="animate-spin" size={18} />
+                  Menganalisis...
+                </>
+              ) : (
+                <>
+                  <FileSearch size={18} />
+                  Mulai Analisis Forensik
+                </>
+              )}
+            </button>
+
+            {error && (
+              <div className="mt-4 p-4 rounded-lg bg-red-50 border border-red-100 text-red-600 text-sm flex gap-3">
+                <AlertCircle className="shrink-0" size={18} />
+                <p>{error}</p>
               </div>
-              <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-700">
-                <div
-                  className="h-full rounded-full bg-gradient-to-r from-blue-500 to-indigo-500 transition-all duration-300 ease-out"
-                  style={{ width: `${parseProgress}%` }}
-                />
-              </div>
-              <div className="mt-2 flex items-center gap-4 text-[10px] text-slate-500">
-                <span className={parseProgress > 20 ? "text-emerald-400" : ""}>
-                  ✓ Ekstraksi Tabel
-                </span>
-                <span className={parseProgress > 50 ? "text-emerald-400" : ""}>
-                  ✓ Named Entity Recognition
-                </span>
-                <span className={parseProgress > 80 ? "text-emerald-400" : ""}>
-                  ✓ Anomaly Scoring
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* Completed indicator */}
-          {!isParsing && parseProgress >= 100 && (
-            <div className="mt-4 flex items-center gap-2 rounded-xl bg-emerald-50 px-5 py-3 ring-1 ring-emerald-200">
-              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-              <p className="text-xs font-semibold text-emerald-700">
-                Parsing selesai — 847 tabel terdeteksi, 1,247 entitas diekstrak
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ════════════════════════════════════════════════
-          SECTION 2: 12 Anomaly Detection Algorithms Grid
-         ════════════════════════════════════════════════ */}
-      <div className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
-        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-amber-500 to-orange-600 shadow-sm shadow-amber-200">
-              <Activity className="h-4 w-4 text-white" />
-            </div>
-            <div>
-              <h2 className="text-sm font-bold text-slate-700">
-                Anomaly Detection Engine
-              </h2>
-              <p className="text-[11px] text-slate-400">
-                12 algoritma deteksi anomali keuangan daerah
-              </p>
-            </div>
-          </div>
-          <span className="flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-semibold text-amber-600 ring-1 ring-amber-200">
-            <BarChart3 className="h-3 w-3" />
-            4 Temuan Aktif
-          </span>
-        </div>
-
-        <div className="px-6 py-5">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {ANOMALY_CARDS.map((card) => {
-              const cfg = statusConfig(card.status);
-              const Icon = card.icon;
-
-              return (
-                <div
-                  key={card.id}
-                  className="group relative overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 transition-shadow hover:shadow-md"
-                >
-                  {/* Top accent bar */}
-                  <span
-                    className={`absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r ${cfg.accentTop} opacity-0 transition-opacity group-hover:opacity-100`}
-                  />
-
-                  <div className="p-5">
-                    <div className="flex items-center justify-between">
-                      <div
-                        className={`flex h-10 w-10 items-center justify-center rounded-xl ${cfg.iconBg}`}
-                      >
-                        <Icon className="h-5 w-5" />
-                      </div>
-                      <span
-                        className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${cfg.badge}`}
-                      >
-                        {cfg.badgeLabel}
-                      </span>
-                    </div>
-
-                    <p className="mt-4 text-2xl font-extrabold text-slate-800">
-                      {card.value}
-                    </p>
-                    <p className="text-sm font-semibold text-slate-600">
-                      {card.title}
-                    </p>
-                    <p className="mt-1 text-[11px] text-slate-400">
-                      {card.description}
-                    </p>
-
-                    <div className="mt-3 flex items-center gap-1 border-t border-slate-100 pt-3">
-                      <span
-                        className={`text-[10px] font-medium ${
-                          card.status === "clear"
-                            ? "text-emerald-500"
-                            : card.status === "warning"
-                              ? "text-amber-500"
-                              : "text-red-500"
-                        }`}
-                      >
-                        {card.delta}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
-      {/* ════════════════════════════════════════════════
-          SECTION 3: Follow-the-Money Tracking Flow
-         ════════════════════════════════════════════════ */}
-      <div className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
-        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-red-500 to-rose-600 shadow-sm shadow-red-200">
-              <Eye className="h-4 w-4 text-white" />
-            </div>
-            <div>
-              <h2 className="text-sm font-bold text-slate-700">
-                Follow-the-Money Tracking
-              </h2>
-              <p className="text-[11px] text-slate-400">
-                Visualisasi arus uang dari sumber hingga titik anomali
-              </p>
-            </div>
-          </div>
-          <span className="flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-1 text-[10px] font-bold text-red-600 ring-1 ring-red-200">
-            <AlertTriangle className="h-3 w-3" />1 Anomali Terdeteksi
-          </span>
-        </div>
-
-        <div className="px-6 py-6">
-          {/* Flow pipeline */}
-          <div className="flex items-stretch gap-0">
-            {FLOW_STEPS.map((step, idx) => {
-              const isAlert = step.type === "alert";
-              const isSource = step.type === "source";
-              const isLast = idx === FLOW_STEPS.length - 1;
-
-              return (
-                <div key={idx} className="flex flex-1 items-center">
-                  {/* Step card */}
-                  <div
-                    className={`relative flex w-full flex-col items-center rounded-2xl px-4 py-5 text-center ring-1 transition-shadow ${
-                      isAlert
-                        ? "bg-red-50 ring-red-300 shadow-lg shadow-red-100"
-                        : isSource
-                          ? "bg-blue-50 ring-blue-200"
-                          : "bg-white ring-slate-200"
-                    }`}
-                  >
-                    {/* Alert pulse */}
-                    {isAlert && (
-                      <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 shadow-sm">
-                        <XCircle className="h-3 w-3 text-white" />
-                      </span>
-                    )}
-
-                    {/* Step number */}
-                    <div
-                      className={`flex h-9 w-9 items-center justify-center rounded-xl text-xs font-bold ${
-                        isAlert
-                          ? "bg-red-600 text-white"
-                          : isSource
-                            ? "bg-blue-600 text-white"
-                            : "bg-slate-100 text-slate-600"
-                      }`}
-                    >
-                      {idx + 1}
-                    </div>
-
-                    <p
-                      className={`mt-2.5 text-xs font-bold ${
-                        isAlert ? "text-red-700" : "text-slate-700"
-                      }`}
-                    >
-                      {step.label}
-                    </p>
-                    <p
-                      className={`mt-0.5 text-[11px] font-medium ${
-                        isAlert ? "text-red-500" : "text-slate-400"
-                      }`}
-                    >
-                      {step.value}
-                    </p>
-
-                    {/* Alert tag */}
-                    {isAlert && (
-                      <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-red-600 px-2.5 py-0.5 text-[10px] font-bold text-white">
-                        <AlertTriangle className="h-3 w-3" />
-                        ALERT!
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Arrow connector */}
-                  {!isLast && (
-                    <div className="flex shrink-0 flex-col items-center px-1">
-                      <div
-                        className={`flex h-8 w-8 items-center justify-center rounded-full ${
-                          idx === FLOW_STEPS.length - 2
-                            ? "bg-red-100 text-red-500"
-                            : "bg-slate-100 text-slate-400"
-                        }`}
-                      >
-                        <ArrowRight className="h-4 w-4" />
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+            )}
           </div>
 
-          {/* Trail details panel */}
-          <div className="mt-5 rounded-xl bg-slate-900 px-5 py-4">
-            <div className="flex items-center gap-2">
-              <Eye className="h-3.5 w-3.5 text-red-400" />
-              <p className="text-[10px] font-bold uppercase tracking-wider text-red-400">
-                Analisis Arus Uang — AI Summary
+          <div className="bg-slate-900 rounded-2xl p-6 text-white shadow-xl shadow-slate-200 overflow-hidden relative">
+            <div className="relative z-10">
+              <h3 className="text-sm font-semibold text-blue-400 uppercase tracking-wider mb-2">Insight Real-time</h3>
+              <p className="text-slate-300 text-sm leading-relaxed">
+                SIGMA menggunakan Azure Cognitive Services untuk mengekstrak data dari dokumen kompleks dan mendeteksi anomali anggaran secara instan.
               </p>
             </div>
-            <p className="mt-2 text-[11px] leading-relaxed text-slate-300">
-              Dana sebesar{" "}
-              <span className="font-semibold text-blue-400">Rp 1.2 Miliar</span>{" "}
-              dari Kas Daerah dialokasikan ke Dinas PU untuk proyek infrastruktur.
-              Dinas PU menunjuk{" "}
-              <span className="font-semibold text-slate-200">
-                PT Bumi Jaya
-              </span>{" "}
-              sebagai kontraktor utama. Investigasi mendeteksi bahwa PT Bumi Jaya
-              menyalurkan{" "}
-              <span className="font-semibold text-red-400">Rp 400 juta</span> ke
-              sub-kontraktor yang{" "}
-              <span className="font-semibold text-red-400">
-                tidak memiliki SIUP/TDP valid
+            <div className="absolute -bottom-6 -right-6 text-slate-800 opacity-20">
+              <Landmark size={120} />
+            </div>
+          </div>
+        </div>
+
+        {/* Results Section */}
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col min-h-[500px]">
+          <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
+              <FileSearch size={20} className="text-blue-600" />
+              Laporan Analisis
+            </h2>
+            {result && (
+              <span className="px-3 py-1 rounded-full bg-green-50 text-green-600 text-[10px] font-bold uppercase tracking-wider">
+                Selesai
               </span>
-              , mengindikasikan potensi vendor fiktif.
+            )}
+          </div>
+
+          <div className="flex-1 p-6 overflow-y-auto">
+            {!result && !loading && (
+              <div className="h-full flex flex-col items-center justify-center text-center space-y-4">
+                <div className="h-16 w-16 rounded-full bg-slate-50 flex items-center justify-center text-slate-300">
+                  <FileSearch size={32} />
+                </div>
+                <div className="max-w-[240px]">
+                  <p className="text-slate-500 font-medium">Belum ada data untuk ditampilkan</p>
+                  <p className="text-slate-400 text-xs mt-1">Silakan unggah dan analisis file APBD terlebih dahulu.</p>
+                </div>
+              </div>
+            )}
+
+            {loading && (
+              <div className="h-full flex flex-col items-center justify-center text-center space-y-4">
+                <div className="relative">
+                  <div className="h-16 w-16 rounded-full border-4 border-blue-50 border-t-blue-600 animate-spin"></div>
+                  <div className="absolute inset-0 flex items-center justify-center text-blue-600">
+                    <Loader2 size={24} className="animate-pulse" />
+                  </div>
+                </div>
+                <div className="max-w-[240px]">
+                  <p className="text-slate-700 font-semibold italic animate-pulse">Memproses Forensik...</p>
+                  <p className="text-slate-400 text-xs mt-1 italic">Mengekstrak tabel dan menjalankan model intelijen.</p>
+                </div>
+              </div>
+            )}
+
+            {result && (
+              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div>
+                  <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Snippet Teks Terekstrak</h4>
+                  <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 font-mono text-xs text-slate-600 leading-relaxed max-h-32 overflow-y-auto">
+                    {result.extracted_text_snippet}...
+                  </div>
+                </div>
+
+                <div>
+                  <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Hasil Analisis Forensik</h4>
+                  <div className="space-y-4 text-slate-700 leading-relaxed whitespace-pre-wrap text-sm bg-blue-50/30 p-5 rounded-2xl border border-blue-100">
+                    {result.analysis}
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-xl bg-green-50 border border-green-100 flex items-start gap-3">
+                  <CheckCircle2 size={18} className="text-green-600 shrink-0 mt-0.5" />
+                  <div className="text-xs text-green-700">
+                    <p className="font-bold mb-1">Analisis berhasil diselesaikan.</p>
+                    <p>Hasil ini disimpan di repositori intelijen SIGMA untuk referensi audit masa depan.</p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          <div className="p-4 bg-slate-50 border-t border-slate-100 rounded-b-2xl">
+            <p className="text-[10px] text-center text-slate-400 italic">
+              Didukung oleh Azure Open AI Service (GPT-4o)
             </p>
-
-            {/* Evidence tags */}
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <span className="rounded-full bg-slate-800 px-2.5 py-1 text-[10px] font-medium text-slate-400 ring-1 ring-slate-700">
-                🔍 SIUP Tidak Ditemukan
-              </span>
-              <span className="rounded-full bg-slate-800 px-2.5 py-1 text-[10px] font-medium text-slate-400 ring-1 ring-slate-700">
-                🏢 Alamat Tidak Terverifikasi
-              </span>
-              <span className="rounded-full bg-slate-800 px-2.5 py-1 text-[10px] font-medium text-slate-400 ring-1 ring-slate-700">
-                💰 Transaksi 1x Selesai
-              </span>
-              <span className="rounded-full bg-red-900/40 px-2.5 py-1 text-[10px] font-bold text-red-400 ring-1 ring-red-800">
-                ⚠ High Risk Vendor
-              </span>
-            </div>
-          </div>
-
-          {/* Mini summary stat bar */}
-          <div className="mt-4 grid grid-cols-3 gap-3">
-            <div className="rounded-lg bg-blue-50 px-3 py-2.5 text-center ring-1 ring-blue-200">
-              <p className="text-lg font-bold text-blue-600">Rp 1.2M</p>
-              <p className="text-[10px] font-medium text-blue-500">
-                Total Arus Terlacak
-              </p>
-            </div>
-            <div className="rounded-lg bg-amber-50 px-3 py-2.5 text-center ring-1 ring-amber-200">
-              <p className="text-lg font-bold text-amber-600">4 Node</p>
-              <p className="text-[10px] font-medium text-amber-500">
-                Entitas Dalam Rantai
-              </p>
-            </div>
-            <div className="rounded-lg bg-red-50 px-3 py-2.5 text-center ring-1 ring-red-200">
-              <p className="text-lg font-bold text-red-600">Rp 400jt</p>
-              <p className="text-[10px] font-medium text-red-500">
-                Nilai Anomali Terdeteksi
-              </p>
-            </div>
           </div>
         </div>
       </div>
-    </section>
+    </div>
   );
 }
