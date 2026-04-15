@@ -7,9 +7,10 @@ import {
 
 export async function POST(
   req: Request,
-  { params }: { params: { type: string } },
+  { params }: { params: Promise<{ type: string }> },
 ) {
   try {
+    const { type } = await params;
     const body = await req.json();
     const { texts } = body;
 
@@ -21,7 +22,7 @@ export async function POST(
     }
 
     let result;
-    switch (params.type) {
+    switch (type) {
       case "entities":
         result = await recognizeEntities(texts);
         break;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   Search,
   Upload,
@@ -22,26 +22,134 @@ import {
   User,
   CheckCircle2,
   Info,
+  Loader2,
+  Volume2,
 } from "lucide-react";
+import {
+  classifyImage,
+  submitCitizenReport,
+  fetchAnomalies,
+  fetchCitizenReports,
+  synthesizeSpeech,
+} from "@/lib/api";
 
 /* ━━━━━━━━━━━━━━━━━━━━━━ PAGE ━━━━━━━━━━━━━━━━━━━━ */
 export default function CitizenEngagementPage() {
   const [query, setQuery] = useState("");
   const [searched, setSearched] = useState(false);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchData, setSearchData] = useState<any>(null);
   const [chatOpen, setChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState("");
-  const [uploadedPhotos, setUploadedPhotos] = useState<string[]>([]);
 
-  function handleSearch(e: React.FormEvent) {
+  // Photo upload state
+  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
+  const [classificationResults, setClassificationResults] = useState<any[]>([]);
+  const [classifyLoading, setClassifyLoading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Report submission
+  const [reportDescription, setReportDescription] = useState("");
+  const [reportLocation, setReportLocation] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitResult, setSubmitResult] = useState<any>(null);
+
+  // TTS
+  const [ttsLoading, setTtsLoading] = useState(false);
+
+  async function handleSearch(e: React.FormEvent) {
     e.preventDefault();
-    if (query.trim()) setSearched(true);
+    const q = query.trim();
+    if (!q) return;
+
+    setSearched(true);
+    setSearchLoading(true);
+    setSearchData(null);
+
+    try {
+      const [anomaliesRes, reportsRes] = await Promise.all([
+        fetchAnomalies(q).catch(() => ({ data: [] })),
+        fetchCitizenReports(q).catch(() => ({ data: [] })),
+      ]);
+
+      setSearchData({
+        anomalies: anomaliesRes.data || [],
+        reports: reportsRes.data || [],
+        query: q,
+      });
+    } catch {
+      setSearchData({ anomalies: [], reports: [], query: q });
+    } finally {
+      setSearchLoading(false);
+    }
   }
 
-  function handleMockUpload() {
-    setUploadedPhotos((prev) => [
-      ...prev,
-      `foto_infrastruktur_${prev.length + 1}.jpg`,
-    ]);
+  async function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    if (!e.target.files || e.target.files.length === 0) return;
+
+    const file = e.target.files[0];
+    setClassifyLoading(true);
+
+    try {
+      const result = await classifyImage(file);
+      setUploadedFiles((prev) => [...prev, file]);
+      setClassificationResults((prev) => [...prev, { fileName: file.name, ...result }]);
+    } catch (err: any) {
+      setClassificationResults((prev) => [
+        ...prev,
+        { fileName: file.name, error: err.message },
+      ]);
+    } finally {
+      setClassifyLoading(false);
+      // Reset input
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  async function handleSubmitReport() {
+    if (!reportDescription.trim()) return;
+
+    setSubmitting(true);
+    setSubmitResult(null);
+
+    try {
+      const data = await submitCitizenReport({
+        description: reportDescription,
+        regionId: reportLocation || undefined,
+        location: reportLocation || undefined,
+        category: "infrastruktur",
+        photos: uploadedFiles.map((f) => f.name),
+        classification:
+          classificationResults.length > 0
+            ? classificationResults[classificationResults.length - 1]?.classification
+            : undefined,
+      });
+
+      setSubmitResult(data);
+      // Reset form
+      setReportDescription("");
+      setReportLocation("");
+      setUploadedFiles([]);
+      setClassificationResults([]);
+    } catch (err: any) {
+      setSubmitResult({ error: err.message });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleTts(text: string) {
+    setTtsLoading(true);
+    try {
+      const audioBlob = await synthesizeSpeech(text);
+      const url = URL.createObjectURL(audioBlob);
+      const audio = new Audio(url);
+      audio.play();
+    } catch (err) {
+      console.error("TTS failed:", err);
+    } finally {
+      setTtsLoading(false);
+    }
   }
 
   return (
@@ -64,7 +172,7 @@ export default function CitizenEngagementPage() {
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-500">
           Selamat datang di portal partisipasi publik SIGMA. Di sini Anda dapat
           memeriksa transparansi daerah, melaporkan temuan di lapangan, dan
-          bertanya langsung ke asisten AI kami.
+          mengunggah foto infrastruktur untuk dianalisis AI.
         </p>
       </header>
 
@@ -79,8 +187,7 @@ export default function CitizenEngagementPage() {
           </h2>
         </div>
         <p className="mt-1 text-xs text-slate-500">
-          Masukkan nama kabupaten/kota untuk melihat skor transparansi dan
-          temuan terkini.
+          Masukkan nama kabupaten/kota untuk melihat data anomali dan laporan warga dari Azure Cosmos DB.
         </p>
 
         {/* Search bar */}
@@ -97,9 +204,14 @@ export default function CitizenEngagementPage() {
           </div>
           <button
             type="submit"
-            className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 px-6 text-sm font-semibold text-white shadow-md shadow-emerald-200 transition-all hover:shadow-lg hover:shadow-emerald-300"
+            disabled={searchLoading}
+            className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 px-6 text-sm font-semibold text-white shadow-md shadow-emerald-200 transition-all hover:shadow-lg hover:shadow-emerald-300 disabled:opacity-60"
           >
-            <Search className="h-4 w-4" />
+            {searchLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Search className="h-4 w-4" />
+            )}
             Cari
           </button>
         </form>
@@ -121,6 +233,19 @@ export default function CitizenEngagementPage() {
                 onClick={() => {
                   setQuery(r);
                   setSearched(true);
+                  setSearchLoading(true);
+                  setSearchData(null);
+                  Promise.all([
+                    fetchAnomalies(r).catch(() => ({ data: [] })),
+                    fetchCitizenReports(r).catch(() => ({ data: [] })),
+                  ]).then(([anomaliesRes, reportsRes]) => {
+                    setSearchData({
+                      anomalies: anomaliesRes.data || [],
+                      reports: reportsRes.data || [],
+                      query: r,
+                    });
+                    setSearchLoading(false);
+                  });
                 }}
                 className="rounded-full bg-white px-3 py-1 text-[10px] font-medium text-slate-500 ring-1 ring-slate-200 transition-colors hover:bg-emerald-50 hover:text-emerald-600 hover:ring-emerald-300"
               >
@@ -130,77 +255,59 @@ export default function CitizenEngagementPage() {
           </div>
         )}
 
+        {/* Search loading */}
+        {searchLoading && (
+          <div className="mt-5 flex items-center justify-center gap-3 rounded-2xl bg-white p-8 shadow-sm ring-1 ring-slate-200">
+            <Loader2 className="h-5 w-5 animate-spin text-emerald-500" />
+            <span className="text-sm text-slate-500">Mencari data dari Azure Cosmos DB...</span>
+          </div>
+        )}
+
         {/* Result card */}
-        {searched && (
+        {searched && searchData && !searchLoading && (
           <div className="mt-5 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                  Hasil Pencarian
+                  Hasil Pencarian — Azure Cosmos DB
                 </p>
                 <h3 className="mt-0.5 text-lg font-bold text-slate-800">
-                  {query || "Kabupaten Bima"}
+                  {searchData.query}
                 </h3>
-                <p className="text-[11px] text-slate-400">
-                  Provinsi Nusa Tenggara Barat · Data LKPD 2024
-                </p>
               </div>
-              <span className="rounded-full bg-red-100 px-3 py-1 text-[10px] font-bold text-red-600 ring-1 ring-red-200">
-                Perlu Perhatian
+              <span className={`rounded-full px-3 py-1 text-[10px] font-bold ring-1 ${
+                searchData.anomalies.length > 0
+                  ? "bg-red-100 text-red-600 ring-red-200"
+                  : "bg-emerald-100 text-emerald-600 ring-emerald-200"
+              }`}>
+                {searchData.anomalies.length > 0 ? "Perlu Perhatian" : "Aman"}
               </span>
             </div>
 
-            <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
-              {/* Transparency score */}
-              <div className="rounded-xl bg-gradient-to-br from-amber-50 to-orange-50 p-4 ring-1 ring-amber-200">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-semibold text-amber-600">
-                    Skor Transparansi
-                  </span>
-                  <Star className="h-4 w-4 text-amber-400" />
-                </div>
-                <div className="mt-2 flex items-end gap-1">
-                  <span className="text-3xl font-extrabold text-amber-600">
-                    42
-                  </span>
-                  <span className="mb-1 text-sm text-slate-400">/100</span>
-                </div>
-                <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-amber-100">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-amber-500 to-orange-400"
-                    style={{ width: "42%" }}
-                  />
-                </div>
-                <p className="mt-1.5 text-[10px] text-amber-600">
-                  Di bawah rata-rata nasional (61)
-                </p>
-              </div>
-
-              {/* Financial findings */}
+            <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {/* Anomalies stats */}
               <div className="rounded-xl bg-gradient-to-br from-red-50 to-rose-50 p-4 ring-1 ring-red-200">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-semibold text-red-600">
-                    Temuan Keuangan
+                    Anomali Terdeteksi
                   </span>
                   <AlertTriangle className="h-4 w-4 text-red-400" />
                 </div>
                 <div className="mt-2 flex items-end gap-1">
                   <span className="text-3xl font-extrabold text-red-600">
-                    7
+                    {searchData.anomalies.length}
                   </span>
-                  <span className="mb-1 text-sm text-slate-400">anomali</span>
+                  <span className="mb-1 text-sm text-slate-400">temuan</span>
                 </div>
-                <ul className="mt-2 flex flex-col gap-1">
-                  <li className="text-[10px] text-red-600">
-                    • 3 markup berlebihan
-                  </li>
-                  <li className="text-[10px] text-red-600">
-                    • 2 vendor fiktif
-                  </li>
-                  <li className="text-[10px] text-red-600">
-                    • 2 penyimpangan prosedur
-                  </li>
-                </ul>
+                {searchData.anomalies.length > 0 && (
+                  <ul className="mt-2 flex flex-col gap-1 max-h-20 overflow-y-auto">
+                    {searchData.anomalies.slice(0, 3).map((a: any, i: number) => (
+                      <li key={i} className="text-[10px] text-red-600 truncate">
+                        • {a.description || a.type}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
 
               {/* Citizen reports */}
@@ -213,59 +320,80 @@ export default function CitizenEngagementPage() {
                 </div>
                 <div className="mt-2 flex items-end gap-1">
                   <span className="text-3xl font-extrabold text-blue-600">
-                    12
+                    {searchData.reports.length}
                   </span>
-                  <span className="mb-1 text-sm text-slate-400">
-                    foto mencurigakan
-                  </span>
+                  <span className="mb-1 text-sm text-slate-400">laporan</span>
                 </div>
-                <div className="mt-2 flex items-center gap-2">
-                  <Eye className="h-3 w-3 text-blue-400" />
-                  <span className="text-[10px] text-blue-500">
-                    4 sedang ditinjau · 3 dikonfirmasi
-                  </span>
-                </div>
+                {searchData.reports.length > 0 && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <Eye className="h-3 w-3 text-blue-400" />
+                    <span className="text-[10px] text-blue-500">
+                      {searchData.reports.filter((r: any) => r.status === "pending_review").length} sedang ditinjau
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Recent findings list */}
-            <div className="mt-5 rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200">
-              <h4 className="text-xs font-bold text-slate-600">
-                Temuan Terkini Warga
-              </h4>
-              <ul className="mt-2 divide-y divide-slate-200">
-                {[
-                  {
-                    text: "Jalan desa Kec. Wera rusak parah, belum diperbaiki sejak 2023",
-                    votes: 24,
-                    time: "2 hari lalu",
-                  },
-                  {
-                    text: "Gedung sekolah SDN 3 retak, tidak sesuai RAB pembangunan",
-                    votes: 18,
-                    time: "5 hari lalu",
-                  },
-                  {
-                    text: "Jembatan Desa Sape terlihat baru namun material berkualitas rendah",
-                    votes: 31,
-                    time: "1 minggu lalu",
-                  },
-                ].map((f, i) => (
-                  <li key={i} className="flex items-start gap-3 py-2.5">
-                    <div className="flex flex-col items-center gap-0.5 pt-0.5">
-                      <ThumbsUp className="h-3 w-3 text-slate-400" />
-                      <span className="text-[10px] font-semibold text-slate-500">
-                        {f.votes}
-                      </span>
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-xs text-slate-600">{f.text}</p>
-                      <p className="text-[10px] text-slate-400">{f.time}</p>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
+            {/* Recent reports list */}
+            {searchData.reports.length > 0 && (
+              <div className="mt-5 rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-xs font-bold text-slate-600">
+                    Laporan Warga Terkini
+                  </h4>
+                  <button
+                    onClick={() => {
+                      const summaryText = searchData.reports
+                        .slice(0, 3)
+                        .map((r: any) => r.description)
+                        .join(". ");
+                      handleTts(`Ringkasan laporan warga untuk ${searchData.query}: ${summaryText}`);
+                    }}
+                    disabled={ttsLoading}
+                    className="flex items-center gap-1 rounded-lg bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-600 ring-1 ring-emerald-200 hover:bg-emerald-100 disabled:opacity-50"
+                  >
+                    <Volume2 className="h-3 w-3" />
+                    {ttsLoading ? "Memuat..." : "Dengarkan"}
+                  </button>
+                </div>
+                <ul className="divide-y divide-slate-200">
+                  {searchData.reports.slice(0, 5).map((report: any, i: number) => (
+                    <li key={i} className="flex items-start gap-3 py-2.5">
+                      <div className="flex flex-col items-center gap-0.5 pt-0.5">
+                        <FileText className="h-3 w-3 text-slate-400" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-xs text-slate-600">{report.description}</p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${
+                            report.status === "pending_review"
+                              ? "bg-amber-100 text-amber-600"
+                              : "bg-emerald-100 text-emerald-600"
+                          }`}>
+                            {report.status === "pending_review" ? "Menunggu" : report.status}
+                          </span>
+                          {report.submittedAt && (
+                            <span className="text-[10px] text-slate-400">
+                              {new Date(report.submittedAt).toLocaleDateString("id-ID")}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {searchData.anomalies.length === 0 && searchData.reports.length === 0 && (
+              <div className="mt-4 flex items-center gap-2 rounded-lg bg-slate-50 px-4 py-3 ring-1 ring-slate-200">
+                <Info className="h-4 w-4 text-slate-400" />
+                <p className="text-xs text-slate-500">
+                  Belum ada data untuk region ini di database. Data akan tersedia setelah ada laporan atau analisis.
+                </p>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -285,49 +413,143 @@ export default function CitizenEngagementPage() {
                 Pelapor Cerdas
               </h2>
               <p className="text-[10px] text-slate-400">
-                Unggah foto infrastruktur mencurigakan
+                Unggah foto infrastruktur — AI akan mengklasifikasikan kondisi
               </p>
             </div>
           </div>
 
           {/* Drop zone */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handlePhotoUpload}
+          />
           <button
-            onClick={handleMockUpload}
-            className="mt-4 flex w-full flex-col items-center gap-3 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-6 py-10 transition-colors hover:border-violet-400 hover:bg-violet-50"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={classifyLoading}
+            className="mt-4 flex w-full flex-col items-center gap-3 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-6 py-10 transition-colors hover:border-violet-400 hover:bg-violet-50 disabled:opacity-60"
           >
             <div className="flex h-14 w-14 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-slate-200">
-              <ImagePlus className="h-6 w-6 text-violet-500" />
+              {classifyLoading ? (
+                <Loader2 className="h-6 w-6 text-violet-500 animate-spin" />
+              ) : (
+                <ImagePlus className="h-6 w-6 text-violet-500" />
+              )}
             </div>
             <div className="text-center">
               <p className="text-sm font-semibold text-slate-600">
-                Klik untuk mengunggah foto
+                {classifyLoading ? "Menganalisis foto..." : "Klik untuk mengunggah foto"}
               </p>
               <p className="mt-0.5 text-[11px] text-slate-400">
-                JPG, PNG, atau HEIC · Maks 10MB per file
+                JPG, PNG · Foto akan dianalisis oleh Azure Custom Vision
               </p>
             </div>
           </button>
 
-          {/* Uploaded photos */}
-          {uploadedPhotos.length > 0 && (
+          {/* Classification results */}
+          {classificationResults.length > 0 && (
             <div className="mt-4 flex flex-col gap-2">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                Foto Terunggah
+                Hasil Klasifikasi AI
               </p>
-              {uploadedPhotos.map((photo, i) => (
+              {classificationResults.map((result, i) => (
                 <div
                   key={i}
-                  className="flex items-center gap-3 rounded-lg bg-emerald-50 px-3 py-2 ring-1 ring-emerald-200"
+                  className={`flex items-start gap-3 rounded-lg px-3 py-2 ring-1 ${
+                    result.error
+                      ? "bg-red-50 ring-red-200"
+                      : "bg-emerald-50 ring-emerald-200"
+                  }`}
                 >
-                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                  <span className="flex-1 text-xs font-medium text-emerald-700">
-                    {photo}
-                  </span>
-                  <span className="text-[10px] text-emerald-500">
-                    Berhasil diunggah
-                  </span>
+                  {result.error ? (
+                    <>
+                      <AlertTriangle className="h-4 w-4 text-red-500 mt-0.5" />
+                      <div>
+                        <span className="text-xs font-medium text-red-700">{result.fileName}</span>
+                        <p className="text-[10px] text-red-600">{result.error}</p>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="h-4 w-4 text-emerald-500 mt-0.5" />
+                      <div className="flex-1">
+                        <span className="text-xs font-medium text-emerald-700">
+                          {result.fileName}
+                        </span>
+                        {result.classification?.topPrediction && (
+                          <div className="mt-1 flex items-center gap-2">
+                            <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">
+                              {result.classification.topPrediction.tagName}
+                            </span>
+                            <span className="text-[10px] text-emerald-600">
+                              {result.classification.topPrediction.probability}
+                            </span>
+                          </div>
+                        )}
+                        {result.classification?.allPredictions && (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {result.classification.allPredictions.slice(1, 4).map((pred: any, j: number) => (
+                              <span key={j} className="text-[9px] text-slate-500">
+                                {pred.tagName}: {pred.probability}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* Report form */}
+          <div className="mt-4 space-y-3">
+            <textarea
+              value={reportDescription}
+              onChange={(e) => setReportDescription(e.target.value)}
+              placeholder="Deskripsikan temuan infrastruktur Anda..."
+              rows={3}
+              className="w-full rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-700 ring-1 ring-slate-200 placeholder:text-slate-400 focus:ring-2 focus:ring-violet-400 focus:outline-none resize-none"
+            />
+            <input
+              type="text"
+              value={reportLocation}
+              onChange={(e) => setReportLocation(e.target.value)}
+              placeholder="Lokasi (contoh: Kec. Wera, Kab. Bima)"
+              className="w-full rounded-xl bg-slate-50 px-4 py-2.5 text-sm text-slate-700 ring-1 ring-slate-200 placeholder:text-slate-400 focus:ring-2 focus:ring-violet-400 focus:outline-none"
+            />
+          </div>
+
+          {/* Submit result */}
+          {submitResult && (
+            <div className={`mt-3 flex items-start gap-2 rounded-lg px-3 py-2 ring-1 ${
+              submitResult.error
+                ? "bg-red-50 ring-red-200"
+                : "bg-emerald-50 ring-emerald-200"
+            }`}>
+              {submitResult.error ? (
+                <>
+                  <AlertTriangle className="h-3.5 w-3.5 text-red-500 mt-0.5" />
+                  <p className="text-[10px] text-red-700">{submitResult.error}</p>
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 mt-0.5" />
+                  <div>
+                    <p className="text-[10px] font-semibold text-emerald-700">
+                      Laporan berhasil dikirim ke Azure Cosmos DB!
+                    </p>
+                    {submitResult.safetyCheck && (
+                      <p className="text-[9px] text-emerald-600 mt-0.5">
+                        Keamanan konten: {submitResult.safetyCheck.isSafe ? "✓ Aman" : "⚠ Perlu review"}
+                      </p>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           )}
 
@@ -335,14 +557,14 @@ export default function CitizenEngagementPage() {
           <div className="mt-4 flex items-start gap-2 rounded-lg bg-blue-50 px-3 py-2 ring-1 ring-blue-200">
             <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-500" />
             <p className="text-[10px] leading-relaxed text-blue-700">
-              Foto Anda akan dianalisis AI untuk mendeteksi kesesuaian antara
-              kondisi fisik dengan anggaran yang dilaporkan. Identitas pelapor
-              dilindungi.
+              Foto Anda akan dianalisis oleh Azure Custom Vision untuk klasifikasi.
+              Teks laporan akan dicek keamanannya oleh Azure Content Safety.
+              Identitas pelapor dilindungi.
             </p>
           </div>
         </div>
 
-        {/* Report guidelines / recent reports */}
+        {/* Report guidelines + Submit */}
         <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-amber-500 to-orange-500 shadow-sm shadow-amber-200">
@@ -407,9 +629,26 @@ export default function CitizenEngagementPage() {
           </ul>
 
           {/* Submit report button */}
-          <button className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 px-5 py-3 text-sm font-semibold text-white shadow-md shadow-violet-200 transition-all hover:shadow-lg hover:shadow-violet-300">
-            <Upload className="h-4 w-4" />
-            Kirim Laporan
+          <button
+            onClick={handleSubmitReport}
+            disabled={!reportDescription.trim() || submitting}
+            className={`mt-5 flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold transition-all ${
+              !reportDescription.trim() || submitting
+                ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                : "bg-gradient-to-r from-violet-600 to-purple-600 text-white shadow-md shadow-violet-200 hover:shadow-lg hover:shadow-violet-300"
+            }`}
+          >
+            {submitting ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Mengirim...
+              </>
+            ) : (
+              <>
+                <Upload className="h-4 w-4" />
+                Kirim Laporan
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -424,7 +663,6 @@ export default function CitizenEngagementPage() {
           className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg shadow-emerald-300 transition-transform hover:scale-105"
         >
           <MessageCircle className="h-6 w-6 text-white" />
-          {/* Notification dot */}
           <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[8px] font-bold text-white">
             1
           </span>
@@ -462,58 +700,9 @@ export default function CitizenEngagementPage() {
               </div>
               <div className="max-w-[75%] rounded-2xl rounded-tl-sm bg-white px-3.5 py-2.5 shadow-sm ring-1 ring-slate-200">
                 <p className="text-xs leading-relaxed text-slate-700">
-                  Halo! 👋 Saya asisten SIGMA. Silakan tanyakan apa saja
-                  tentang anggaran daerah, transparansi, atau regulasi.
+                  Halo! 👋 Saya asisten SIGMA. Gunakan fitur &quot;Cek Transparansi&quot; di atas
+                  untuk mencari data dari Azure Cosmos DB, atau kirimkan laporan warga Anda.
                 </p>
-                <p className="mt-1 text-[9px] text-slate-400">10:30</p>
-              </div>
-            </div>
-
-            {/* User message */}
-            <div className="flex items-start justify-end gap-2.5">
-              <div className="max-w-[75%] rounded-2xl rounded-tr-sm bg-emerald-500 px-3.5 py-2.5 shadow-sm">
-                <p className="text-xs leading-relaxed text-white">
-                  Berapa anggaran pendidikan di Dompu?
-                </p>
-                <p className="mt-1 text-[9px] text-emerald-200">10:31</p>
-              </div>
-              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-200">
-                <User className="h-3.5 w-3.5 text-slate-500" />
-              </div>
-            </div>
-
-            {/* Bot response */}
-            <div className="flex items-start gap-2.5">
-              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-100">
-                <Bot className="h-3.5 w-3.5 text-emerald-600" />
-              </div>
-              <div className="max-w-[75%] rounded-2xl rounded-tl-sm bg-white px-3.5 py-2.5 shadow-sm ring-1 ring-slate-200">
-                <p className="text-xs leading-relaxed text-slate-700">
-                  Berdasarkan APBD Kab. Dompu 2024, anggaran fungsi pendidikan
-                  sebesar{" "}
-                  <span className="font-bold text-emerald-600">
-                    Rp 487.3 Miliar
-                  </span>{" "}
-                  (32.1% dari total APBD). Ini meningkat 5.4% dari tahun
-                  sebelumnya.
-                </p>
-                <div className="mt-2 rounded-lg bg-emerald-50 px-2.5 py-1.5 ring-1 ring-emerald-200">
-                  <p className="text-[10px] font-semibold text-emerald-700">
-                    📊 Rincian:
-                  </p>
-                  <ul className="mt-1 flex flex-col gap-0.5">
-                    <li className="text-[10px] text-emerald-600">
-                      • Gaji guru: Rp 312M
-                    </li>
-                    <li className="text-[10px] text-emerald-600">
-                      • Infrastruktur sekolah: Rp 98M
-                    </li>
-                    <li className="text-[10px] text-emerald-600">
-                      • BOS & bantuan siswa: Rp 77.3M
-                    </li>
-                  </ul>
-                </div>
-                <p className="mt-1 text-[9px] text-slate-400">10:31</p>
               </div>
             </div>
           </div>
@@ -542,7 +731,7 @@ export default function CitizenEngagementPage() {
               </button>
             </form>
             <p className="mt-1.5 text-center text-[9px] text-slate-400">
-              Didukung oleh AI · Jawaban berdasarkan data APBD resmi
+              Didukung oleh Azure AI Services
             </p>
           </div>
         </div>

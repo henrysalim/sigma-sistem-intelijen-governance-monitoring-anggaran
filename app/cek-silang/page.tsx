@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import {
   Upload,
   FileText,
@@ -17,31 +17,122 @@ import {
   Zap,
   ChevronRight,
   Link2,
+  Loader2,
+  Tag,
+  Key,
 } from "lucide-react";
+import { analyzeApbd, analyzeLanguage, saveAnomalyData } from "@/lib/api";
 
 /* ━━━━━━━━━━━━━━━━━━━━━━ PAGE ━━━━━━━━━━━━━━━━━━━━ */
 export default function CrossCheckPage() {
-  const [uploaded, setUploaded] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [done, setDone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  function handleUpload() {
-    setUploaded(true);
+  // Results from Azure
+  const [docResult, setDocResult] = useState<any>(null);
+  const [entities, setEntities] = useState<any>(null);
+  const [keyPhrases, setKeyPhrases] = useState<any>(null);
+
+  async function handleUpload() {
+    if (!file) {
+      fileInputRef.current?.click();
+      return;
+    }
+
     setAnalyzing(true);
     setDone(false);
+    setError(null);
+    setDocResult(null);
+    setEntities(null);
+    setKeyPhrases(null);
 
-    // Simulate AI analysis
-    setTimeout(() => {
-      setAnalyzing(false);
+    try {
+      // Step 1: Analyze document with Azure Document Intelligence
+      const docData = await analyzeApbd(file);
+      setDocResult(docData);
+
+      // Step 2: Run NLP on extracted content
+      const textContent = docData.analysis?.content;
+      if (textContent) {
+        // Take first 5000 chars to stay within limits
+        const textSnippet = textContent.substring(0, 5000);
+
+        const [entRes, kpRes] = await Promise.all([
+          analyzeLanguage("entities", [textSnippet]),
+          analyzeLanguage("keyphrases", [textSnippet]),
+        ]);
+        setEntities(entRes.results?.[0]);
+        setKeyPhrases(kpRes.results?.[0]);
+
+        // Step 3: Save findings to Cosmos DB as anomaly
+        try {
+          await saveAnomalyData({
+            type: "lkpd-analysis",
+            description: `Analisis otomatis dokumen ${file.name}`,
+            module: "Cek-Silang",
+            severity: "SEDANG",
+            metadata: {
+              fileName: file.name,
+              pageCount: docData.analysis?.pageCount,
+              tableCount: docData.analysis?.tableCount,
+              entityCount: entRes.results?.[0]?.entities?.length || 0,
+              keyPhraseCount: kpRes.results?.[0]?.keyPhrases?.length || 0,
+            },
+          });
+        } catch (saveErr) {
+          console.warn("Failed to save to Cosmos, continuing:", saveErr);
+        }
+      }
+
       setDone(true);
-    }, 2400);
+    } catch (err: any) {
+      setError(err.message || "Gagal menganalisis dokumen");
+    } finally {
+      setAnalyzing(false);
+    }
   }
 
   function handleReset() {
-    setUploaded(false);
+    setFile(null);
     setAnalyzing(false);
     setDone(false);
+    setError(null);
+    setDocResult(null);
+    setEntities(null);
+    setKeyPhrases(null);
   }
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    if (e.target.files && e.target.files[0]) {
+      setFile(e.target.files[0]);
+    }
+  }
+
+  const uploaded = !!file;
+  const analysis = docResult?.analysis;
+
+  // Group entities by category for display
+  const entityGroups: Record<string, any[]> = {};
+  if (entities?.entities) {
+    for (const ent of entities.entities) {
+      const cat = ent.category || "Other";
+      if (!entityGroups[cat]) entityGroups[cat] = [];
+      entityGroups[cat].push(ent);
+    }
+  }
+
+  // Filter financial entities
+  const financialEntities = entities?.entities?.filter(
+    (e: any) =>
+      e.category === "Quantity" ||
+      e.category === "DateTime" ||
+      e.category === "Organization" ||
+      e.category === "Person" ||
+      e.category === "Location"
+  ) || [];
 
   return (
     <section className="flex flex-col gap-6">
@@ -61,6 +152,13 @@ export default function CrossCheckPage() {
         </div>
 
         <div className="flex items-center gap-3">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf"
+            className="hidden"
+            onChange={handleFileChange}
+          />
           {uploaded && (
             <button
               onClick={handleReset}
@@ -70,23 +168,49 @@ export default function CrossCheckPage() {
             </button>
           )}
           <button
-            onClick={handleUpload}
+            onClick={() => {
+              if (!file) {
+                fileInputRef.current?.click();
+              } else {
+                handleUpload();
+              }
+            }}
             disabled={analyzing}
             className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-blue-200 transition-all hover:shadow-lg hover:shadow-blue-300 disabled:opacity-60"
           >
-            <Upload className="h-4 w-4" />
-            {analyzing ? "Menganalisis…" : "Unggah Dokumen LKPD"}
+            {analyzing ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Menganalisis…
+              </>
+            ) : (
+              <>
+                <Upload className="h-4 w-4" />
+                {file ? "Mulai Analisis" : "Unggah Dokumen LKPD"}
+              </>
+            )}
           </button>
         </div>
       </header>
+
+      {/* Error */}
+      {error && (
+        <div className="flex items-center gap-3 rounded-2xl bg-red-50 px-6 py-4 ring-1 ring-red-200">
+          <AlertTriangle className="h-5 w-5 text-red-500 shrink-0" />
+          <div>
+            <p className="text-sm font-semibold text-red-700">Gagal Menganalisis</p>
+            <p className="text-xs text-red-600">{error}</p>
+          </div>
+        </div>
+      )}
 
       {/* ── Pipeline indicator ────────────────────── */}
       <div className="flex items-center gap-3 rounded-2xl bg-white px-6 py-4 shadow-sm ring-1 ring-slate-200">
         {[
           { label: "Unggah LKPD", active: uploaded },
-          { label: "Analisis APBD", active: uploaded },
-          { label: "Cocokkan Regulasi", active: done },
-          { label: "Buat Ringkasan Hukum", active: done },
+          { label: "Analisis APBD", active: analyzing || done },
+          { label: "NLP & Entitas", active: done },
+          { label: "Simpan Temuan", active: done },
         ].map((step, i, arr) => (
           <div key={step.label} className="flex items-center gap-3">
             <div className="flex items-center gap-2">
@@ -122,10 +246,10 @@ export default function CrossCheckPage() {
           </div>
           <div className="flex-1">
             <p className="text-sm font-semibold text-blue-800">
-              LKPD_Kab_Dompu_2024.pdf
+              {file!.name}
             </p>
             <p className="text-[11px] text-blue-500">
-              247 halaman · 18.4 MB · Diunggah baru saja
+              {(file!.size / 1024).toFixed(1)} KB · Diunggah baru saja
             </p>
           </div>
           {analyzing && (
@@ -158,13 +282,13 @@ export default function CrossCheckPage() {
           </div>
           <div className="text-center">
             <p className="text-sm font-semibold text-slate-700">
-              Memproses dokumen dengan AI…
+              Memproses dokumen dengan Azure AI…
             </p>
             <p className="mt-0.5 text-[11px] text-slate-400">
-              Mengekstrak data APBD, mencocokkan regulasi, membangun kasus hukum
+              Mengekstrak data APBD, menjalankan NLP, menyimpan temuan
             </p>
           </div>
-          {/* Fake progress bar */}
+          {/* Progress bar */}
           <div className="h-1.5 w-64 overflow-hidden rounded-full bg-slate-100">
             <div
               className="h-full animate-pulse rounded-full bg-gradient-to-r from-blue-500 to-indigo-500"
@@ -175,9 +299,9 @@ export default function CrossCheckPage() {
       )}
 
       {/* ── Three-column results ──────────────────── */}
-      {done && (
+      {done && analysis && (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          {/* ──────── Column 1: APBD Forensik (Money) ──────── */}
+          {/* ──────── Column 1: Extracted Data (Document Intelligence) ──────── */}
           <div className="flex flex-col gap-4">
             <div className="flex items-center gap-2">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-100">
@@ -185,93 +309,95 @@ export default function CrossCheckPage() {
               </div>
               <div>
                 <h2 className="text-sm font-bold text-slate-700">
-                  APBD Forensik
+                  Data Terekstrak
                 </h2>
-                <p className="text-[10px] text-slate-400">Temuan Keuangan</p>
+                <p className="text-[10px] text-slate-400">Azure Document Intelligence</p>
               </div>
             </div>
 
-            {/* Alert card */}
-            <div className="rounded-2xl bg-white shadow-sm ring-1 ring-red-200">
-              <div className="flex items-center gap-2 border-b border-red-100 px-5 py-3">
-                <ShieldAlert className="h-4 w-4 text-red-500" />
-                <span className="text-[10px] font-bold uppercase tracking-wider text-red-500">
-                  Anomali Terdeteksi
+            {/* Stats */}
+            <div className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+              <div className="flex items-center gap-2 border-b border-slate-100 px-5 py-3">
+                <FileSearch className="h-4 w-4 text-blue-500" />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600">
+                  Ringkasan Dokumen
                 </span>
               </div>
-
-              <div className="flex flex-col gap-4 px-5 py-4">
-                <div className="rounded-xl bg-red-50 px-4 py-3 ring-1 ring-red-200">
-                  <p className="text-sm font-semibold leading-relaxed text-red-800">
-                    Pengadaan laptop Rp 25jt/unit oleh{" "}
-                    <span className="underline decoration-red-300">
-                      PT Solar Abadi
-                    </span>
-                  </p>
-                  <p className="mt-1.5 text-xs font-bold text-red-600">
-                    Markup 280% dari e-katalog
-                  </p>
+              <div className="grid grid-cols-3 gap-0 divide-x divide-slate-100 px-2 py-4">
+                <div className="text-center">
+                  <p className="text-lg font-bold text-blue-600">{analysis.pageCount}</p>
+                  <p className="text-[10px] text-slate-400">Halaman</p>
                 </div>
-
-                <div className="flex flex-col gap-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-500">Harga e-Katalog</span>
-                    <span className="font-semibold text-emerald-600">
-                      Rp 6.5jt/unit
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-500">Harga Kontrak</span>
-                    <span className="font-bold text-red-600">Rp 25jt/unit</span>
-                  </div>
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-500">Selisih per Unit</span>
-                    <span className="font-bold text-red-600">Rp 18.5jt</span>
-                  </div>
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-500">Total Unit</span>
-                    <span className="font-semibold text-slate-700">
-                      175 unit
-                    </span>
-                  </div>
-
-                  <hr className="border-slate-100" />
-
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium text-slate-500">
-                      Est. Kerugian Negara
-                    </span>
-                    <span className="text-base font-extrabold text-red-600">
-                      Rp 3.2 M
-                    </span>
-                  </div>
+                <div className="text-center">
+                  <p className="text-lg font-bold text-indigo-600">{analysis.tableCount}</p>
+                  <p className="text-[10px] text-slate-400">Tabel</p>
                 </div>
-
-                <div className="flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 ring-1 ring-amber-200">
-                  <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-500" />
-                  <p className="text-[10px] text-amber-700">
-                    Vendor PT Solar Abadi terdaftar di 3 kontrak serupa dalam 2
-                    tahun terakhir
-                  </p>
+                <div className="text-center">
+                  <p className="text-lg font-bold text-violet-600">{analysis.paragraphCount}</p>
+                  <p className="text-[10px] text-slate-400">Paragraf</p>
                 </div>
               </div>
             </div>
 
-            {/* Risk level */}
-            <div className="flex items-center gap-3 rounded-xl bg-red-600 px-4 py-3 shadow-md shadow-red-200">
-              <XCircle className="h-5 w-5 text-red-200" />
-              <div>
-                <p className="text-xs font-bold text-white">
-                  Tingkat Risiko: KRITIS
-                </p>
-                <p className="text-[10px] text-red-200">
-                  Memerlukan tindakan segera
-                </p>
+            {/* Content preview */}
+            <div className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+              <div className="border-b border-slate-100 px-5 py-3">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  Konten Terekstrak
+                </span>
+              </div>
+              <div className="px-5 py-4">
+                <div className="max-h-48 overflow-y-auto rounded-lg bg-slate-50 p-3 font-mono text-[11px] text-slate-600 leading-relaxed ring-1 ring-slate-200 whitespace-pre-wrap">
+                  {analysis.content
+                    ? analysis.content.substring(0, 1500) + (analysis.content.length > 1500 ? "\n\n..." : "")
+                    : "Tidak ada konten teks."}
+                </div>
               </div>
             </div>
+
+            {/* Tables */}
+            {analysis.tables && analysis.tables.length > 0 && (
+              <div className="rounded-2xl bg-white shadow-sm ring-1 ring-blue-200">
+                <div className="flex items-center gap-2 border-b border-blue-100 px-5 py-3">
+                  <Scale className="h-4 w-4 text-blue-500" />
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600">
+                    {analysis.tableCount} Tabel Ditemukan
+                  </span>
+                </div>
+                <div className="px-5 py-4 space-y-3">
+                  {analysis.tables.slice(0, 2).map((table: any, idx: number) => (
+                    <div key={idx} className="rounded-lg bg-blue-50 p-3 ring-1 ring-blue-100">
+                      <p className="text-xs font-semibold text-blue-700 mb-1">
+                        Tabel {idx + 1}: {table.rowCount}×{table.columnCount}
+                      </p>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-[10px] text-slate-600">
+                          <tbody>
+                            {Array.from({ length: Math.min(table.rowCount, 4) }).map((_, rowIdx) => (
+                              <tr key={rowIdx} className={rowIdx === 0 ? "font-semibold" : "border-t border-blue-100"}>
+                                {Array.from({ length: Math.min(table.columnCount, 4) }).map((_, colIdx) => {
+                                  const cell = table.cells.find(
+                                    (c: any) => c.rowIndex === rowIdx && c.columnIndex === colIdx
+                                  );
+                                  return (
+                                    <td key={colIdx} className="px-1.5 py-1">
+                                      {cell?.content || ""}
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* ──────── Column 2: Regulation Genome (Rules) ──────── */}
+          {/* ──────── Column 2: NLP Analysis (Language Service) ──────── */}
           <div className="flex flex-col gap-4">
             <div className="flex items-center gap-2">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100">
@@ -279,111 +405,105 @@ export default function CrossCheckPage() {
               </div>
               <div>
                 <h2 className="text-sm font-bold text-slate-700">
-                  Genom Regulasi
+                  Analisis NLP
                 </h2>
                 <p className="text-[10px] text-slate-400">
-                  Aturan yang Dilanggar
+                  Azure AI Language
                 </p>
               </div>
             </div>
 
-            {/* Rule card 1 */}
-            <div className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
-              <div className="flex items-center gap-2 border-b border-blue-100 px-5 py-3">
-                <Scale className="h-4 w-4 text-blue-500" />
-                <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600">
-                  Aturan Cocok #1
-                </span>
-                <span className="ml-auto rounded-full bg-red-100 px-2 py-0.5 text-[9px] font-bold text-red-600">
-                  DILANGGAR
-                </span>
-              </div>
-              <div className="px-5 py-4">
-                <p className="text-xs font-bold text-slate-700">
-                  Perpres 16/2018 — Pasal 24
-                </p>
-                <p className="mt-1.5 rounded-lg bg-blue-50 px-3 py-2 text-xs leading-relaxed text-blue-800 ring-1 ring-blue-200">
-                  &ldquo;HPS wajib mengacu harga pasar/e-katalog.&rdquo;
-                </p>
-                <div className="mt-3 flex items-center gap-2">
-                  <Link2 className="h-3 w-3 text-slate-400" />
-                  <span className="text-[10px] text-slate-400">
-                    Pengadaan Barang/Jasa Pemerintah
+            {/* Key Phrases */}
+            {keyPhrases && (
+              <div className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+                <div className="flex items-center gap-2 border-b border-indigo-100 px-5 py-3">
+                  <Key className="h-4 w-4 text-indigo-500" />
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600">
+                    Frasa Kunci ({keyPhrases.keyPhrases?.length || 0})
                   </span>
                 </div>
+                <div className="px-5 py-4">
+                  {keyPhrases.keyPhrases?.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {keyPhrases.keyPhrases.slice(0, 20).map((phrase: string, i: number) => (
+                        <span
+                          key={i}
+                          className="rounded-lg bg-indigo-50 px-2 py-1 text-[11px] font-medium text-indigo-700 ring-1 ring-indigo-200"
+                        >
+                          {phrase}
+                        </span>
+                      ))}
+                      {keyPhrases.keyPhrases.length > 20 && (
+                        <span className="rounded-lg bg-slate-50 px-2 py-1 text-[11px] text-slate-400 ring-1 ring-slate-200">
+                          +{keyPhrases.keyPhrases.length - 20} lagi
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-400">Tidak ada frasa kunci terdeteksi.</p>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
 
-            {/* Rule card 2 */}
-            <div className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
-              <div className="flex items-center gap-2 border-b border-blue-100 px-5 py-3">
-                <Scale className="h-4 w-4 text-blue-500" />
-                <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600">
-                  Aturan Cocok #2
-                </span>
-                <span className="ml-auto rounded-full bg-red-100 px-2 py-0.5 text-[9px] font-bold text-red-600">
-                  DILANGGAR
-                </span>
-              </div>
-              <div className="px-5 py-4">
-                <p className="text-xs font-bold text-slate-700">
-                  Perpres 16/2018 — Pasal 38
-                </p>
-                <p className="mt-1.5 rounded-lg bg-blue-50 px-3 py-2 text-xs leading-relaxed text-blue-800 ring-1 ring-blue-200">
-                  &ldquo;Pengadaan &gt;200jt wajib tender terbuka.&rdquo;
-                </p>
-                <div className="mt-3 flex items-center gap-2">
-                  <Link2 className="h-3 w-3 text-slate-400" />
-                  <span className="text-[10px] text-slate-400">
-                    Metode Pemilihan Penyedia
+            {/* Entities */}
+            {entities && (
+              <div className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+                <div className="flex items-center gap-2 border-b border-blue-100 px-5 py-3">
+                  <Tag className="h-4 w-4 text-blue-500" />
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600">
+                    Entitas Terdeteksi ({entities.entities?.length || 0})
                   </span>
                 </div>
-              </div>
-            </div>
-
-            {/* Rule card 3 — additional */}
-            <div className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
-              <div className="flex items-center gap-2 border-b border-amber-100 px-5 py-3">
-                <Scale className="h-4 w-4 text-amber-500" />
-                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600">
-                  Aturan Cocok #3
-                </span>
-                <span className="ml-auto rounded-full bg-amber-100 px-2 py-0.5 text-[9px] font-bold text-amber-600">
-                  PERINGATAN
-                </span>
-              </div>
-              <div className="px-5 py-4">
-                <p className="text-xs font-bold text-slate-700">
-                  Perpres 16/2018 — Pasal 77
-                </p>
-                <p className="mt-1.5 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800 ring-1 ring-amber-200">
-                  &ldquo;PPK wajib menolak hasil pekerjaan yang tidak sesuai
-                  kontrak.&rdquo;
-                </p>
-                <div className="mt-3 flex items-center gap-2">
-                  <Link2 className="h-3 w-3 text-slate-400" />
-                  <span className="text-[10px] text-slate-400">
-                    Pelaksanaan Kontrak
-                  </span>
+                <div className="px-5 py-4 space-y-3 max-h-80 overflow-y-auto">
+                  {Object.keys(entityGroups).length > 0 ? (
+                    Object.entries(entityGroups).map(([category, ents]) => (
+                      <div key={category}>
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                          {category} ({ents.length})
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {ents.slice(0, 8).map((ent: any, i: number) => (
+                            <span
+                              key={i}
+                              className="inline-flex items-center gap-1 rounded-lg bg-white px-2 py-1 text-[11px] font-medium text-slate-700 ring-1 ring-slate-200"
+                            >
+                              {ent.text}
+                              <span className="text-[9px] text-blue-500 font-semibold">
+                                {Math.round(ent.confidenceScore * 100)}%
+                              </span>
+                            </span>
+                          ))}
+                          {ents.length > 8 && (
+                            <span className="text-[10px] text-slate-400 self-center">
+                              +{ents.length - 8}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-xs text-slate-400">Tidak ada entitas terdeteksi.</p>
+                  )}
                 </div>
               </div>
-            </div>
+            )}
 
             {/* Matched stats */}
             <div className="flex items-center gap-3 rounded-xl bg-blue-600 px-4 py-3 shadow-md shadow-blue-200">
               <Zap className="h-5 w-5 text-blue-200" />
               <div>
                 <p className="text-xs font-bold text-white">
-                  3 Aturan Cocok Ditemukan
+                  {entities?.entities?.length || 0} Entitas · {keyPhrases?.keyPhrases?.length || 0} Frasa Kunci
                 </p>
                 <p className="text-[10px] text-blue-200">
-                  Dari 2.847 regulasi dalam database
+                  Dianalisis oleh Azure AI Language
                 </p>
               </div>
             </div>
           </div>
 
-          {/* ──────── Column 3: Legal Brief Output ──────── */}
+          {/* ──────── Column 3: Summary & Findings ──────── */}
           <div className="flex flex-col gap-4">
             <div className="flex items-center gap-2">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-100">
@@ -391,149 +511,124 @@ export default function CrossCheckPage() {
               </div>
               <div>
                 <h2 className="text-sm font-bold text-slate-700">
-                  Ringkasan Hukum
+                  Ringkasan Temuan
                 </h2>
                 <p className="text-[10px] text-slate-400">Dihasilkan oleh AI</p>
               </div>
             </div>
 
-            {/* Main legal brief card */}
-            <div className="rounded-2xl bg-gradient-to-br from-red-600 to-red-700 p-[1px] shadow-lg shadow-red-200">
-              <div className="rounded-[15px] bg-gradient-to-br from-red-600 to-red-700 px-5 py-5">
+            {/* Main findings card */}
+            <div className="rounded-2xl bg-gradient-to-br from-indigo-600 to-blue-700 p-[1px] shadow-lg shadow-indigo-200">
+              <div className="rounded-[15px] bg-gradient-to-br from-indigo-600 to-blue-700 px-5 py-5">
                 <div className="flex items-center gap-2">
-                  <ShieldAlert className="h-5 w-5 text-red-200" />
+                  <ShieldAlert className="h-5 w-5 text-indigo-200" />
                   <span className="text-sm font-extrabold uppercase tracking-wider text-white">
-                    Indikasi Tipikor
+                    Hasil Analisis
                   </span>
                 </div>
 
-                <p className="mt-3 text-xs leading-relaxed text-red-100">
-                  Berdasarkan analisis AI terhadap dokumen LKPD Kab. Dompu 2024,
-                  ditemukan indikasi kuat tindak pidana korupsi pada pengadaan
-                  barang/jasa.
+                <p className="mt-3 text-xs leading-relaxed text-indigo-100">
+                  Dokumen {docResult?.fileName || "LKPD"} berhasil dianalisis
+                  oleh Azure AI. Ditemukan {analysis.tableCount} tabel data,
+                  {" "}{entities?.entities?.length || 0} entitas relevan, dan
+                  {" "}{keyPhrases?.keyPhrases?.length || 0} frasa kunci.
                 </p>
 
                 <div className="mt-4 flex flex-col gap-2.5">
                   <div className="flex items-center justify-between rounded-lg bg-white/10 px-3 py-2">
-                    <span className="text-[11px] text-red-200">
-                      Kerugian Negara (est.)
-                    </span>
-                    <span className="text-base font-extrabold text-white">
-                      Rp 3.2 M
-                    </span>
+                    <span className="text-[11px] text-indigo-200">Halaman Dianalisis</span>
+                    <span className="text-base font-extrabold text-white">{analysis.pageCount}</span>
                   </div>
                   <div className="flex items-center justify-between rounded-lg bg-white/10 px-3 py-2">
-                    <span className="text-[11px] text-red-200">
-                      Aturan Dilanggar
-                    </span>
-                    <span className="text-base font-extrabold text-white">
-                      3
-                    </span>
+                    <span className="text-[11px] text-indigo-200">Tabel Ditemukan</span>
+                    <span className="text-base font-extrabold text-white">{analysis.tableCount}</span>
                   </div>
                   <div className="flex items-center justify-between rounded-lg bg-white/10 px-3 py-2">
-                    <span className="text-[11px] text-red-200">
-                      Bukti Pendukung
-                    </span>
-                    <span className="text-base font-extrabold text-white">
-                      7 dokumen
-                    </span>
+                    <span className="text-[11px] text-indigo-200">Entitas Terdeteksi</span>
+                    <span className="text-base font-extrabold text-white">{entities?.entities?.length || 0}</span>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Evidence list */}
-            <div className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
-              <div className="border-b border-slate-100 px-5 py-3">
-                <h3 className="text-xs font-bold text-slate-700">
-                  Daftar Bukti Pendukung
-                </h3>
+            {/* Key financial entities */}
+            {financialEntities.length > 0 && (
+              <div className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+                <div className="border-b border-slate-100 px-5 py-3">
+                  <h3 className="text-xs font-bold text-slate-700">
+                    Entitas Keuangan & Organisasi
+                  </h3>
+                </div>
+                <ul className="divide-y divide-slate-100">
+                  {financialEntities.slice(0, 10).map((ent: any, i: number) => (
+                    <li
+                      key={i}
+                      className="flex items-center gap-3 px-5 py-2.5 transition-colors hover:bg-slate-50"
+                    >
+                      <FileText className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                      <span className="flex-1 text-[11px] text-slate-600">
+                        {ent.text}
+                      </span>
+                      <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold text-slate-500">
+                        {ent.category}
+                      </span>
+                      <ChevronRight className="h-3 w-3 text-slate-300" />
+                    </li>
+                  ))}
+                </ul>
               </div>
-              <ul className="divide-y divide-slate-100">
-                {[
-                  "Kontrak pengadaan No. 054/BPKD/2024",
-                  "E-katalog screenshot (Rp 6.5jt)",
-                  "SPK PT Solar Abadi",
-                  "Berita Acara Serah Terima",
-                  "Dokumen HPS pengadaan",
-                  "Laporan audit internal SKPD",
-                  "Rekening koran vendor",
-                ].map((doc, i) => (
-                  <li
-                    key={i}
-                    className="flex items-center gap-3 px-5 py-2.5 transition-colors hover:bg-slate-50"
-                  >
-                    <FileText className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                    <span className="flex-1 text-[11px] text-slate-600">
-                      {doc}
-                    </span>
-                    <ChevronRight className="h-3 w-3 text-slate-300" />
-                  </li>
-                ))}
-              </ul>
-            </div>
+            )}
 
-            {/* Timeline */}
-            <div className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
-              <div className="border-b border-slate-100 px-5 py-3">
-                <h3 className="text-xs font-bold text-slate-700">
-                  Kronologi Kejadian
-                </h3>
+            {/* Paragraphs with roles */}
+            {analysis.paragraphs?.filter((p: any) => p.role).length > 0 && (
+              <div className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+                <div className="border-b border-slate-100 px-5 py-3">
+                  <h3 className="text-xs font-bold text-slate-700">
+                    Struktur Dokumen
+                  </h3>
+                </div>
+                <div className="flex flex-col gap-0 px-5 py-4">
+                  {analysis.paragraphs
+                    .filter((p: any) => p.role)
+                    .slice(0, 6)
+                    .map((p: any, i: number) => (
+                      <div key={i} className="flex gap-3 pb-2">
+                        <div className="flex flex-col items-center">
+                          <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-indigo-500" />
+                          {i < 5 && <span className="w-px flex-1 bg-slate-200" />}
+                        </div>
+                        <div className="pb-2">
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-indigo-500">
+                            {p.role}
+                          </p>
+                          <p className="text-[11px] font-medium text-slate-700 line-clamp-2">
+                            {p.content}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                </div>
               </div>
-              <div className="flex flex-col gap-0 px-5 py-4">
-                {[
-                  {
-                    date: "12 Jan 2024",
-                    event: "HPS disusun tanpa acuan e-katalog",
-                    color: "bg-amber-500",
-                  },
-                  {
-                    date: "28 Feb 2024",
-                    event: "Penunjukan langsung PT Solar Abadi",
-                    color: "bg-red-500",
-                  },
-                  {
-                    date: "15 Mar 2024",
-                    event: "Kontrak ditandatangani — Rp 4.375M",
-                    color: "bg-red-500",
-                  },
-                  {
-                    date: "20 Jun 2024",
-                    event: "Barang diterima, BAST diterbitkan",
-                    color: "bg-slate-400",
-                  },
-                ].map((t, i) => (
-                  <div key={i} className="flex gap-3">
-                    <div className="flex flex-col items-center">
-                      <span
-                        className={`h-2.5 w-2.5 shrink-0 rounded-full ${t.color}`}
-                      />
-                      {i < 3 && <span className="w-px flex-1 bg-slate-200" />}
-                    </div>
-                    <div className="pb-4">
-                      <p className="text-[10px] font-medium text-slate-400">
-                        {t.date}
-                      </p>
-                      <p className="text-[11px] font-medium text-slate-700">
-                        {t.event}
-                      </p>
-                    </div>
-                  </div>
-                ))}
+            )}
+
+            {/* Saved confirmation */}
+            <div className="flex items-center gap-3 rounded-xl bg-emerald-50 px-4 py-3 ring-1 ring-emerald-200">
+              <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+              <div>
+                <p className="text-xs font-bold text-emerald-700">
+                  Temuan Disimpan ke Azure Cosmos DB
+                </p>
+                <p className="text-[10px] text-emerald-600">
+                  Data tersedia di dashboard untuk monitoring
+                </p>
               </div>
             </div>
-
-            {/* CTA */}
-            <button className="flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-md shadow-indigo-200 transition-all hover:shadow-lg hover:shadow-indigo-300">
-              <Gavel className="h-4 w-4" />
-              Ekspor Ringkasan Hukum (PDF)
-            </button>
           </div>
         </div>
       )}
 
       {/* ── Empty state ──────────────────────────── */}
-      {!uploaded && (
+      {!uploaded && !error && (
         <div className="flex flex-col items-center gap-5 rounded-2xl bg-white py-20 shadow-sm ring-1 ring-slate-200">
           <div className="flex h-20 w-20 items-center justify-center rounded-full bg-slate-50 ring-1 ring-slate-200">
             <Upload className="h-8 w-8 text-slate-400" />
@@ -543,12 +638,12 @@ export default function CrossCheckPage() {
               Unggah dokumen LKPD untuk memulai
             </p>
             <p className="mt-1 text-[11px] text-slate-400">
-              AI akan menganalisis data keuangan, mencocokkan dengan regulasi,
-              dan menghasilkan ringkasan hukum
+              AI akan menganalisis data keuangan, menjalankan NLP, dan
+              menyimpan temuan ke database
             </p>
           </div>
           <div className="flex flex-wrap justify-center gap-2">
-            {["PDF", "XLSX", "LKPD", "LHP"].map((fmt) => (
+            {["PDF"].map((fmt) => (
               <span
                 key={fmt}
                 className="rounded-full bg-slate-50 px-3 py-1 text-[10px] font-medium text-slate-500 ring-1 ring-slate-200"

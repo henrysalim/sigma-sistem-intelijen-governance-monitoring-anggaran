@@ -15,7 +15,13 @@ import {
   Zap,
   Scale,
   Eye,
+  Search,
+  Loader2,
+  Tag,
+  Key,
+  Brain,
 } from "lucide-react";
+import { analyzeLanguage } from "@/lib/api";
 
 /* ─── Constants ─────────────────────────────────── */
 const YEARS = [2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026];
@@ -59,8 +65,47 @@ const RIPPLE_EFFECTS = [
 export default function RegulationIntelligencePage() {
   const [selectedYear, setSelectedYear] = useState(2024);
 
+  // NLP Analysis state
+  const [nlpText, setNlpText] = useState("");
+  const [nlpLoading, setNlpLoading] = useState(false);
+  const [nlpEntities, setNlpEntities] = useState<any>(null);
+  const [nlpKeyPhrases, setNlpKeyPhrases] = useState<any>(null);
+  const [nlpError, setNlpError] = useState<string | null>(null);
+
   const events = TIMELINE_EVENTS[selectedYear] || [];
   const sliderIndex = YEARS.indexOf(selectedYear);
+
+  async function handleNlpAnalysis() {
+    if (!nlpText.trim()) return;
+
+    setNlpLoading(true);
+    setNlpError(null);
+    setNlpEntities(null);
+    setNlpKeyPhrases(null);
+
+    try {
+      const [entitiesRes, keyPhrasesRes] = await Promise.all([
+        analyzeLanguage("entities", [nlpText]),
+        analyzeLanguage("keyphrases", [nlpText]),
+      ]);
+      setNlpEntities(entitiesRes.results);
+      setNlpKeyPhrases(keyPhrasesRes.results);
+    } catch (err: any) {
+      setNlpError(err.message || "Analisis gagal");
+    } finally {
+      setNlpLoading(false);
+    }
+  }
+
+  // Group entities by category
+  const entityGroups: Record<string, any[]> = {};
+  if (nlpEntities?.[0] && !nlpEntities[0].error) {
+    for (const ent of nlpEntities[0].entities) {
+      const cat = ent.category || "Other";
+      if (!entityGroups[cat]) entityGroups[cat] = [];
+      entityGroups[cat].push(ent);
+    }
+  }
 
   return (
     <section className="flex flex-col gap-6">
@@ -90,6 +135,133 @@ export default function RegulationIntelligencePage() {
           </span>
         </div>
       </header>
+
+      {/* ════════════════════════════════════════════════
+          LIVE NLP ANALYSIS SECTION
+         ════════════════════════════════════════════════ */}
+      <div className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-cyan-600 shadow-sm shadow-blue-200">
+              <Brain className="h-4 w-4 text-white" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-slate-700">
+                Analisis NLP Regulasi
+              </h2>
+              <p className="text-[11px] text-slate-400">
+                Paste teks regulasi untuk mengekstrak entitas & frasa kunci via Azure AI Language
+              </p>
+            </div>
+          </div>
+          <span className="flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-semibold text-blue-600 ring-1 ring-blue-200">
+            <Zap className="h-3 w-3" />
+            Azure AI
+          </span>
+        </div>
+
+        <div className="px-6 py-5 space-y-4">
+          <textarea
+            value={nlpText}
+            onChange={(e) => setNlpText(e.target.value)}
+            placeholder="Paste isi pasal/regulasi di sini untuk dianalisis oleh AI...&#10;&#10;Contoh: Pengadaan barang/jasa dengan nilai hingga Rp 200.000.000 dapat dilaksanakan secara langsung oleh Dinas Pekerjaan Umum Kab. Dompu berdasarkan Perpres 16/2018 Pasal 22."
+            rows={4}
+            className="w-full rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-700 ring-1 ring-slate-200 placeholder:text-slate-400 focus:ring-2 focus:ring-blue-400 focus:outline-none resize-none"
+          />
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleNlpAnalysis}
+              disabled={!nlpText.trim() || nlpLoading}
+              className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold transition-all ${
+                !nlpText.trim() || nlpLoading
+                  ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                  : "bg-blue-600 text-white hover:bg-blue-700 shadow-md shadow-blue-200"
+              }`}
+            >
+              {nlpLoading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Menganalisis...
+                </>
+              ) : (
+                <>
+                  <Search className="h-4 w-4" />
+                  Analisis Teks
+                </>
+              )}
+            </button>
+
+            {nlpError && (
+              <span className="text-xs text-red-600 flex items-center gap-1">
+                <AlertTriangle className="h-3 w-3" />
+                {nlpError}
+              </span>
+            )}
+          </div>
+
+          {/* NLP Results */}
+          {(nlpEntities || nlpKeyPhrases) && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-2">
+              {/* Entities */}
+              <div className="rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200">
+                <h3 className="text-xs font-bold text-slate-700 flex items-center gap-1.5 mb-3">
+                  <Tag className="h-3.5 w-3.5 text-blue-500" />
+                  Entitas Terdeteksi
+                </h3>
+                {Object.keys(entityGroups).length > 0 ? (
+                  <div className="space-y-3">
+                    {Object.entries(entityGroups).map(([category, entities]) => (
+                      <div key={category}>
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">
+                          {category}
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {entities.map((ent: any, i: number) => (
+                            <span
+                              key={i}
+                              className="inline-flex items-center gap-1 rounded-lg bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 ring-1 ring-slate-200"
+                            >
+                              {ent.text}
+                              <span className="text-[9px] text-blue-500 font-semibold">
+                                {Math.round(ent.confidenceScore * 100)}%
+                              </span>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-400">Tidak ada entitas terdeteksi.</p>
+                )}
+              </div>
+
+              {/* Key Phrases */}
+              <div className="rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200">
+                <h3 className="text-xs font-bold text-slate-700 flex items-center gap-1.5 mb-3">
+                  <Key className="h-3.5 w-3.5 text-indigo-500" />
+                  Frasa Kunci
+                </h3>
+                {nlpKeyPhrases?.[0]?.keyPhrases?.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {nlpKeyPhrases[0].keyPhrases.map((phrase: string, i: number) => (
+                      <span
+                        key={i}
+                        className="rounded-lg bg-indigo-50 px-2.5 py-1 text-[11px] font-medium text-indigo-700 ring-1 ring-indigo-200"
+                      >
+                        {phrase}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-400">Tidak ada frasa kunci terdeteksi.</p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* ════════════════════════════════════════════════
           TOP SECTION: Regulatory Time Travel & Contradiction
@@ -371,33 +543,25 @@ export default function RegulationIntelligencePage() {
               {/* Unchanged context */}
               <div className="text-slate-500">
                 <p className="pl-6">
-                  <span className="mr-3 inline-block w-5 text-right text-slate-600">
-                    14
-                  </span>
+                  <span className="mr-3 inline-block w-5 text-right text-slate-600">14</span>
                   ## Pasal 5 — Batas Nilai Pengadaan Langsung
                 </p>
                 <p className="pl-6">
-                  <span className="mr-3 inline-block w-5 text-right text-slate-600">
-                    15
-                  </span>
+                  <span className="mr-3 inline-block w-5 text-right text-slate-600">15</span>
                 </p>
               </div>
 
               {/* Removed lines */}
               <div className="rounded-md bg-red-950/40 text-red-400">
                 <p className="pl-6">
-                  <span className="mr-3 inline-block w-5 text-right text-red-600">
-                    16
-                  </span>
+                  <span className="mr-3 inline-block w-5 text-right text-red-600">16</span>
                   <span className="mr-2 text-red-600">−</span>
                   <span className="line-through opacity-70">
                     Pengadaan barang/jasa dengan nilai hingga Rp 200.000.000
                   </span>
                 </p>
                 <p className="pl-6">
-                  <span className="mr-3 inline-block w-5 text-right text-red-600">
-                    17
-                  </span>
+                  <span className="mr-3 inline-block w-5 text-right text-red-600">17</span>
                   <span className="mr-2 text-red-600">−</span>
                   <span className="line-through opacity-70">
                     dapat dilaksanakan secara langsung tanpa proses tender.
@@ -408,34 +572,26 @@ export default function RegulationIntelligencePage() {
               {/* Added lines */}
               <div className="mt-0.5 rounded-md bg-emerald-950/40 text-emerald-400">
                 <p className="pl-6">
-                  <span className="mr-3 inline-block w-5 text-right text-emerald-600">
-                    16
-                  </span>
+                  <span className="mr-3 inline-block w-5 text-right text-emerald-600">16</span>
                   <span className="mr-2 text-emerald-500">+</span>
                   Pengadaan barang/jasa dengan nilai hingga Rp 200.000.000
                 </p>
                 <p className="pl-6">
-                  <span className="mr-3 inline-block w-5 text-right text-emerald-600">
-                    17
-                  </span>
+                  <span className="mr-3 inline-block w-5 text-right text-emerald-600">17</span>
                   <span className="mr-2 text-emerald-500">+</span>
                   <span className="rounded bg-emerald-800/50 px-1 font-semibold text-emerald-300">
                     wajib melalui proses tender terbuka sesuai Perpres 16/2018
                   </span>
                 </p>
                 <p className="pl-6">
-                  <span className="mr-3 inline-block w-5 text-right text-emerald-600">
-                    18
-                  </span>
+                  <span className="mr-3 inline-block w-5 text-right text-emerald-600">18</span>
                   <span className="mr-2 text-emerald-500">+</span>
                   <span className="rounded bg-emerald-800/50 px-1 font-semibold text-emerald-300">
                     Pasal 22 Ayat 1. Pengadaan langsung hanya diizinkan untuk
                   </span>
                 </p>
                 <p className="pl-6">
-                  <span className="mr-3 inline-block w-5 text-right text-emerald-600">
-                    19
-                  </span>
+                  <span className="mr-3 inline-block w-5 text-right text-emerald-600">19</span>
                   <span className="mr-2 text-emerald-500">+</span>
                   <span className="rounded bg-emerald-800/50 px-1 font-semibold text-emerald-300">
                     nilai di bawah Rp 50.000.000 (lima puluh juta rupiah).
@@ -446,14 +602,10 @@ export default function RegulationIntelligencePage() {
               {/* More unchanged context */}
               <div className="mt-0.5 text-slate-500">
                 <p className="pl-6">
-                  <span className="mr-3 inline-block w-5 text-right text-slate-600">
-                    20
-                  </span>
+                  <span className="mr-3 inline-block w-5 text-right text-slate-600">20</span>
                 </p>
                 <p className="pl-6">
-                  <span className="mr-3 inline-block w-5 text-right text-slate-600">
-                    21
-                  </span>
+                  <span className="mr-3 inline-block w-5 text-right text-slate-600">21</span>
                   ## Pasal 6 — Prosedur Pemilihan Penyedia
                 </p>
               </div>
