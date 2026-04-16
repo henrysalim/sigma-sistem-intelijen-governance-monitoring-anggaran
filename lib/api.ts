@@ -47,8 +47,30 @@ export async function classifyImage(file: File) {
   });
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || "Klasifikasi gambar gagal");
+    // Try to extract a concise error message from the response
+    const text = await res.text().catch(() => "");
+    let message = "Klasifikasi gambar gagal";
+    if (text) {
+      try {
+        const body = JSON.parse(text);
+        if (typeof body === "string") message = body;
+        else if (body.error && typeof body.error === "string") message = body.error;
+        else if (body.message && typeof body.message === "string") message = body.message;
+        else {
+          // Fallback: prefer a short serialization or status text
+          const keys = Object.keys(body);
+          if (keys.length === 1 && typeof body[keys[0]] === "string") message = body[keys[0]];
+          else message = res.statusText || message;
+        }
+      } catch {
+        // Not JSON, use raw text
+        message = text.length > 0 ? text : res.statusText || message;
+      }
+    } else {
+      message = res.statusText || message;
+    }
+
+    throw new Error(message);
   }
   return res.json();
 }
