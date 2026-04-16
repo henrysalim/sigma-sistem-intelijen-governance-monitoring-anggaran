@@ -1,45 +1,61 @@
-import axios from "axios";
+/**
+ * Backwards-compatible wrapper that previously called Custom Vision.
+ * Now uses Azure Computer Vision Analyze API (no publishName required).
+ */
+import { Buffer } from "buffer";
 
-const predictionEndpoint = process.env.AZURE_CV_PREDICTION_ENDPOINT!;
-const predictionKey = process.env.AZURE_CV_PREDICTION_KEY!;
-const projectId = process.env.AZURE_CV_PROJECT_ID!;
-const publishName = process.env.AZURE_CV_PUBLISH_NAME!;
+const cvEndpoint = process.env.AZURE_CV_ENDPOINT;
+const cvKey = process.env.AZURE_CV_KEY;
 
 interface Prediction {
   tagName: string;
-  probability: string;
+  probability: string; // formatted like "87.50%"
   probabilityRaw: number;
 }
 
-/**
- * Classify an infrastructure photo (jalan rusak/baik, gedung selesai/mangkrak).
- *
- * @param {Buffer} imageBuffer - Image file buffer
- * @returns {Object} Classification predictions
- */
 export async function classifyInfrastructureImage(imageBuffer: Buffer) {
-  const url = `${predictionEndpoint}/customvision/v3.0/Prediction/${projectId}/classify/iterations/${publishName}/image`;
+  if (!cvEndpoint || !cvKey) {
+    throw new Error("Missing AZURE_CV_ENDPOINT or AZURE_CV_KEY");
+  }
 
-  const response = await axios.post(url, imageBuffer, {
+  const analyzeUrl = `${cvEndpoint.replace(/\/$/, "")}/vision/v3.2/analyze?visualFeatures=Tags,Description,Objects`;
+
+  // Node's fetch expects a body type compatible with BodyInit; convert Buffer to ArrayBuffer
+  const temp = imageBuffer.buffer.slice(imageBuffer.byteOffset, imageBuffer.byteOffset + imageBuffer.byteLength) as ArrayBuffer;
+  const body = temp.slice(0) as ArrayBuffer;
+
+  const res = await fetch(analyzeUrl, {
+    method: "POST",
     headers: {
-      "Prediction-Key": predictionKey,
+      "Ocp-Apim-Subscription-Key": cvKey,
       "Content-Type": "application/octet-stream",
     },
+    body,
   });
 
-  const predictions: Prediction[] = response.data.predictions.map(
-    (p: { tagName: string; probability: number }) => ({
-      tagName: p.tagName,
-      probability: (p.probability * 100).toFixed(2) + "%",
-      probabilityRaw: p.probability,
-    }),
-  );
+  if (!res.ok) {
+    const body = (await res.text().catch(() => "")).trim() || res.statusText;
+    const err = new Error(body);
+    (err as any).status = res.status;
+    throw err;
+  }
 
-  // Sort by highest probability
-  predictions.sort((a, b) => b.probabilityRaw - a.probabilityRaw);
+  const data = await res.json();
+
+  const allPredictions: Prediction[] = Array.isArray(data.tags)
+    ? data.tags.map((t: any) => ({
+        tagName: t.name,
+        probability: ((t.confidence ?? 0) * 100).toFixed(2) + "%",
+        probabilityRaw: t.confidence ?? 0,
+      }))
+    : [];
+
+  allPredictions.sort((a, b) => b.probabilityRaw - a.probabilityRaw);
 
   return {
-    topPrediction: predictions[0],
-    allPredictions: predictions,
+    topPrediction: allPredictions[0] || null,
+    allPredictions,
+    captions: data.description?.captions || [],
+    raw: data,
   };
 }

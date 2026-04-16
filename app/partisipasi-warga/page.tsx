@@ -93,7 +93,10 @@ export default function CitizenEngagementPage() {
     try {
       const result = await classifyImage(file);
       setUploadedFiles((prev) => [...prev, file]);
-      setClassificationResults((prev) => [...prev, { fileName: file.name, ...result }]);
+      setClassificationResults((prev) => [
+        ...prev,
+        { fileName: file.name, ...result },
+      ]);
     } catch (err: any) {
       setClassificationResults((prev) => [
         ...prev,
@@ -121,7 +124,8 @@ export default function CitizenEngagementPage() {
         photos: uploadedFiles.map((f) => f.name),
         classification:
           classificationResults.length > 0
-            ? classificationResults[classificationResults.length - 1]?.classification
+            ? classificationResults[classificationResults.length - 1]
+                ?.classification
             : undefined,
       });
 
@@ -187,7 +191,8 @@ export default function CitizenEngagementPage() {
           </h2>
         </div>
         <p className="mt-1 text-xs text-slate-500">
-          Masukkan nama kabupaten/kota untuk melihat data anomali dan laporan warga dari Azure Cosmos DB.
+          Masukkan nama kabupaten/kota untuk melihat data anomali dan laporan
+          warga dari Azure Cosmos DB.
         </p>
 
         {/* Search bar */}
@@ -259,7 +264,9 @@ export default function CitizenEngagementPage() {
         {searchLoading && (
           <div className="mt-5 flex items-center justify-center gap-3 rounded-2xl bg-white p-8 shadow-sm ring-1 ring-slate-200">
             <Loader2 className="h-5 w-5 animate-spin text-emerald-500" />
-            <span className="text-sm text-slate-500">Mencari data dari Azure Cosmos DB...</span>
+            <span className="text-sm text-slate-500">
+              Mencari data dari Azure Cosmos DB...
+            </span>
           </div>
         )}
 
@@ -275,11 +282,13 @@ export default function CitizenEngagementPage() {
                   {searchData.query}
                 </h3>
               </div>
-              <span className={`rounded-full px-3 py-1 text-[10px] font-bold ring-1 ${
-                searchData.anomalies.length > 0
-                  ? "bg-red-100 text-red-600 ring-red-200"
-                  : "bg-emerald-100 text-emerald-600 ring-emerald-200"
-              }`}>
+              <span
+                className={`rounded-full px-3 py-1 text-[10px] font-bold ring-1 ${
+                  searchData.anomalies.length > 0
+                    ? "bg-red-100 text-red-600 ring-red-200"
+                    : "bg-emerald-100 text-emerald-600 ring-emerald-200"
+                }`}
+              >
                 {searchData.anomalies.length > 0 ? "Perlu Perhatian" : "Aman"}
               </span>
             </div>
@@ -301,11 +310,16 @@ export default function CitizenEngagementPage() {
                 </div>
                 {searchData.anomalies.length > 0 && (
                   <ul className="mt-2 flex flex-col gap-1 max-h-20 overflow-y-auto">
-                    {searchData.anomalies.slice(0, 3).map((a: any, i: number) => (
-                      <li key={i} className="text-[10px] text-red-600 truncate">
-                        • {a.description || a.type}
-                      </li>
-                    ))}
+                    {searchData.anomalies
+                      .slice(0, 3)
+                      .map((a: any, i: number) => (
+                        <li
+                          key={i}
+                          className="text-[10px] text-red-600 truncate"
+                        >
+                          • {a.description || a.type}
+                        </li>
+                      ))}
                   </ul>
                 )}
               </div>
@@ -328,7 +342,12 @@ export default function CitizenEngagementPage() {
                   <div className="mt-2 flex items-center gap-2">
                     <Eye className="h-3 w-3 text-blue-400" />
                     <span className="text-[10px] text-blue-500">
-                      {searchData.reports.filter((r: any) => r.status === "pending_review").length} sedang ditinjau
+                      {
+                        searchData.reports.filter(
+                          (r: any) => r.status === "pending_review",
+                        ).length
+                      }{" "}
+                      sedang ditinjau
                     </span>
                   </div>
                 )}
@@ -348,7 +367,9 @@ export default function CitizenEngagementPage() {
                         .slice(0, 3)
                         .map((r: any) => r.description)
                         .join(". ");
-                      handleTts(`Ringkasan laporan warga untuk ${searchData.query}: ${summaryText}`);
+                      handleTts(
+                        `Ringkasan laporan warga untuk ${searchData.query}: ${summaryText}`,
+                      );
                     }}
                     disabled={ttsLoading}
                     className="flex items-center gap-1 rounded-lg bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-600 ring-1 ring-emerald-200 hover:bg-emerald-100 disabled:opacity-50"
@@ -358,42 +379,54 @@ export default function CitizenEngagementPage() {
                   </button>
                 </div>
                 <ul className="divide-y divide-slate-200">
-                  {searchData.reports.slice(0, 5).map((report: any, i: number) => (
-                    <li key={i} className="flex items-start gap-3 py-2.5">
-                      <div className="flex flex-col items-center gap-0.5 pt-0.5">
-                        <FileText className="h-3 w-3 text-slate-400" />
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-xs text-slate-600">{report.description}</p>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${
-                            report.status === "pending_review"
-                              ? "bg-amber-100 text-amber-600"
-                              : "bg-emerald-100 text-emerald-600"
-                          }`}>
-                            {report.status === "pending_review" ? "Menunggu" : report.status}
-                          </span>
-                          {report.submittedAt && (
-                            <span className="text-[10px] text-slate-400">
-                              {new Date(report.submittedAt).toLocaleDateString("id-ID")}
-                            </span>
-                          )}
+                  {searchData.reports
+                    .slice(0, 5)
+                    .map((report: any, i: number) => (
+                      <li key={i} className="flex items-start gap-3 py-2.5">
+                        <div className="flex flex-col items-center gap-0.5 pt-0.5">
+                          <FileText className="h-3 w-3 text-slate-400" />
                         </div>
-                      </div>
-                    </li>
-                  ))}
+                        <div className="flex-1">
+                          <p className="text-xs text-slate-600">
+                            {report.description}
+                          </p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span
+                              className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${
+                                report.status === "pending_review"
+                                  ? "bg-amber-100 text-amber-600"
+                                  : "bg-emerald-100 text-emerald-600"
+                              }`}
+                            >
+                              {report.status === "pending_review"
+                                ? "Menunggu"
+                                : report.status}
+                            </span>
+                            {report.submittedAt && (
+                              <span className="text-[10px] text-slate-400">
+                                {new Date(
+                                  report.submittedAt,
+                                ).toLocaleDateString("id-ID")}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </li>
+                    ))}
                 </ul>
               </div>
             )}
 
-            {searchData.anomalies.length === 0 && searchData.reports.length === 0 && (
-              <div className="mt-4 flex items-center gap-2 rounded-lg bg-slate-50 px-4 py-3 ring-1 ring-slate-200">
-                <Info className="h-4 w-4 text-slate-400" />
-                <p className="text-xs text-slate-500">
-                  Belum ada data untuk region ini di database. Data akan tersedia setelah ada laporan atau analisis.
-                </p>
-              </div>
-            )}
+            {searchData.anomalies.length === 0 &&
+              searchData.reports.length === 0 && (
+                <div className="mt-4 flex items-center gap-2 rounded-lg bg-slate-50 px-4 py-3 ring-1 ring-slate-200">
+                  <Info className="h-4 w-4 text-slate-400" />
+                  <p className="text-xs text-slate-500">
+                    Belum ada data untuk region ini di database. Data akan
+                    tersedia setelah ada laporan atau analisis.
+                  </p>
+                </div>
+              )}
           </div>
         )}
       </div>
@@ -440,7 +473,9 @@ export default function CitizenEngagementPage() {
             </div>
             <div className="text-center">
               <p className="text-sm font-semibold text-slate-600">
-                {classifyLoading ? "Menganalisis foto..." : "Klik untuk mengunggah foto"}
+                {classifyLoading
+                  ? "Menganalisis foto..."
+                  : "Klik untuk mengunggah foto"}
               </p>
               <p className="mt-0.5 text-[11px] text-slate-400">
                 JPG, PNG · Foto akan dianalisis oleh Azure Custom Vision
@@ -467,8 +502,12 @@ export default function CitizenEngagementPage() {
                     <>
                       <AlertTriangle className="h-4 w-4 text-red-500 mt-0.5" />
                       <div>
-                        <span className="text-xs font-medium text-red-700">{result.fileName}</span>
-                        <p className="text-[10px] text-red-600">{result.error}</p>
+                        <span className="text-xs font-medium text-red-700">
+                          {result.fileName}
+                        </span>
+                        <p className="text-[10px] text-red-600">
+                          {result.error}
+                        </p>
                       </div>
                     </>
                   ) : (
@@ -490,11 +529,16 @@ export default function CitizenEngagementPage() {
                         )}
                         {result.classification?.allPredictions && (
                           <div className="mt-1 flex flex-wrap gap-1">
-                            {result.classification.allPredictions.slice(1, 4).map((pred: any, j: number) => (
-                              <span key={j} className="text-[9px] text-slate-500">
-                                {pred.tagName}: {pred.probability}
-                              </span>
-                            ))}
+                            {result.classification.allPredictions
+                              .slice(1, 4)
+                              .map((pred: any, j: number) => (
+                                <span
+                                  key={j}
+                                  className="text-[9px] text-slate-500"
+                                >
+                                  {pred.tagName}: {pred.probability}
+                                </span>
+                              ))}
                           </div>
                         )}
                       </div>
@@ -525,15 +569,19 @@ export default function CitizenEngagementPage() {
 
           {/* Submit result */}
           {submitResult && (
-            <div className={`mt-3 flex items-start gap-2 rounded-lg px-3 py-2 ring-1 ${
-              submitResult.error
-                ? "bg-red-50 ring-red-200"
-                : "bg-emerald-50 ring-emerald-200"
-            }`}>
+            <div
+              className={`mt-3 flex items-start gap-2 rounded-lg px-3 py-2 ring-1 ${
+                submitResult.error
+                  ? "bg-red-50 ring-red-200"
+                  : "bg-emerald-50 ring-emerald-200"
+              }`}
+            >
               {submitResult.error ? (
                 <>
                   <AlertTriangle className="h-3.5 w-3.5 text-red-500 mt-0.5" />
-                  <p className="text-[10px] text-red-700">{submitResult.error}</p>
+                  <p className="text-[10px] text-red-700">
+                    {submitResult.error}
+                  </p>
                 </>
               ) : (
                 <>
@@ -544,7 +592,10 @@ export default function CitizenEngagementPage() {
                     </p>
                     {submitResult.safetyCheck && (
                       <p className="text-[9px] text-emerald-600 mt-0.5">
-                        Keamanan konten: {submitResult.safetyCheck.isSafe ? "✓ Aman" : "⚠ Perlu review"}
+                        Keamanan konten:{" "}
+                        {submitResult.safetyCheck.isSafe
+                          ? "✓ Aman"
+                          : "⚠ Perlu review"}
                       </p>
                     )}
                   </div>
@@ -557,9 +608,9 @@ export default function CitizenEngagementPage() {
           <div className="mt-4 flex items-start gap-2 rounded-lg bg-blue-50 px-3 py-2 ring-1 ring-blue-200">
             <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-500" />
             <p className="text-[10px] leading-relaxed text-blue-700">
-              Foto Anda akan dianalisis oleh Azure Custom Vision untuk klasifikasi.
-              Teks laporan akan dicek keamanannya oleh Azure Content Safety.
-              Identitas pelapor dilindungi.
+              Foto Anda akan dianalisis oleh Azure Custom Vision untuk
+              klasifikasi. Teks laporan akan dicek keamanannya oleh Azure
+              Content Safety. Identitas pelapor dilindungi.
             </p>
           </div>
         </div>
@@ -700,8 +751,9 @@ export default function CitizenEngagementPage() {
               </div>
               <div className="max-w-[75%] rounded-2xl rounded-tl-sm bg-white px-3.5 py-2.5 shadow-sm ring-1 ring-slate-200">
                 <p className="text-xs leading-relaxed text-slate-700">
-                  Halo! 👋 Saya asisten SIGMA. Gunakan fitur &quot;Cek Transparansi&quot; di atas
-                  untuk mencari data dari Azure Cosmos DB, atau kirimkan laporan warga Anda.
+                  Halo! 👋 Saya asisten SIGMA. Gunakan fitur &quot;Cek
+                  Transparansi&quot; di atas untuk mencari data dari Azure
+                  Cosmos DB, atau kirimkan laporan warga Anda.
                 </p>
               </div>
             </div>

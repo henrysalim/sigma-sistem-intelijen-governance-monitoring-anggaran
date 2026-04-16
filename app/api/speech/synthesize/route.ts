@@ -15,8 +15,16 @@ export async function POST(req: Request) {
 
     const audioBuffer = await textToSpeech(text, language);
 
-    // Return the buffer directly with correct headers
-    return new NextResponse(audioBuffer, {
+    // Convert Node Buffer to ArrayBuffer for compatible BodyInit type
+    // Ensure we pass a plain ArrayBuffer
+    const temp = audioBuffer.buffer.slice(
+      audioBuffer.byteOffset,
+      audioBuffer.byteOffset + audioBuffer.byteLength,
+    );
+
+    const arrayBuffer = temp instanceof ArrayBuffer ? temp : temp.slice(0);
+
+    return new NextResponse(arrayBuffer as ArrayBuffer, {
       status: 200,
       headers: {
         "Content-Type": "audio/wav",
