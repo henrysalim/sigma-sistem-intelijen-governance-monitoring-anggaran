@@ -1,7 +1,7 @@
 import axios from "axios";
 
-const endpoint = process.env.AZURE_CONTENT_SAFETY_ENDPOINT!;
-const key = process.env.AZURE_CONTENT_SAFETY_KEY!;
+const endpoint = process.env.AZURE_CONTENT_SAFETY_ENDPOINT;
+const key = process.env.AZURE_CONTENT_SAFETY_KEY;
 
 /**
  * Analyze text content for safety violations (whistleblower portal).
@@ -11,6 +11,11 @@ const key = process.env.AZURE_CONTENT_SAFETY_KEY!;
  * @returns {Object} Safety analysis result
  */
 export async function analyzeTextSafety(text: string) {
+  if (!endpoint || !key) {
+    throw new Error(
+      "AZURE_CONTENT_SAFETY_ENDPOINT or AZURE_CONTENT_SAFETY_KEY is missing.",
+    );
+  }
   const url = `${endpoint}/contentsafety/text:analyze?api-version=2024-09-01`;
 
   const response = await axios.post(
@@ -51,6 +56,11 @@ export async function analyzeTextSafety(text: string) {
  * @returns {Object} Safety analysis result
  */
 export async function analyzeImageSafety(imageBuffer: Buffer) {
+  if (!endpoint || !key) {
+    throw new Error(
+      "AZURE_CONTENT_SAFETY_ENDPOINT or AZURE_CONTENT_SAFETY_KEY is missing.",
+    );
+  }
   const url = `${endpoint}/contentsafety/image:analyze?api-version=2024-09-01`;
   const base64Image = imageBuffer.toString("base64");
 

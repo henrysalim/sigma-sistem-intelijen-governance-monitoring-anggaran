@@ -1,7 +1,7 @@
 import { AzureKeyCredential } from "@azure/core-auth";
 
-const endpoint = process.env.AZURE_DOC_INTEL_ENDPOINT!;
-const key = process.env.AZURE_DOC_INTEL_KEY!;
+const endpoint = process.env.AZURE_DOC_INTEL_ENDPOINT;
+const key = process.env.AZURE_DOC_INTEL_KEY;
 
 interface AnalyzeResultTable {
   rowCount: number;
@@ -32,6 +32,11 @@ interface AnalyzeResult {
  * @returns {Object} Parsed analysis result
  */
 export async function analyzeDocument(fileBuffer: Buffer) {
+  if (!endpoint || !key) {
+    throw new Error(
+      "AZURE_DOC_INTEL_ENDPOINT or AZURE_DOC_INTEL_KEY is missing from environment variables.",
+    );
+  }
   // Dynamic import for ESM-only module
   const { default: DocumentIntelligence } =
     await import("@azure-rest/ai-document-intelligence");

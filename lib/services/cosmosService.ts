@@ -1,16 +1,30 @@
 import { CosmosClient, SqlQuerySpec } from "@azure/cosmos";
 
-const endpoint = process.env.AZURE_COSMOS_ENDPOINT!;
-const key = process.env.AZURE_COSMOS_KEY!;
-const databaseId = process.env.AZURE_COSMOS_DATABASE!;
+const endpoint = process.env.AZURE_COSMOS_ENDPOINT;
+const key = process.env.AZURE_COSMOS_KEY;
+const databaseId = process.env.AZURE_COSMOS_DATABASE;
 
-const client = new CosmosClient({ endpoint, key });
+let client: CosmosClient | null = null;
+
+function getClient() {
+  if (!endpoint || !key) {
+    throw new Error(
+      "AZURE_COSMOS_ENDPOINT or AZURE_COSMOS_KEY is missing from environment variables.",
+    );
+  }
+  if (!client) {
+    client = new CosmosClient({ endpoint, key });
+  }
+  return client;
+}
 
 /**
  * initialize Cosmos DB for dev
  */
 export async function initCosmos() {
-  const { database } = await client.databases.createIfNotExists({
+  if (!databaseId) throw new Error("AZURE_COSMOS_DATABASE is missing");
+
+  const { database } = await getClient().databases.createIfNotExists({
     id: databaseId,
   });
   await database.containers.createIfNotExists({ id: "anomalies" });
@@ -21,7 +35,8 @@ export async function initCosmos() {
  * Get or create a container reference.
  */
 function getContainer(containerId: string) {
-  return client.database(databaseId).container(containerId);
+  if (!databaseId) throw new Error("AZURE_COSMOS_DATABASE is missing");
+  return getClient().database(databaseId).container(containerId);
 }
 
 /**

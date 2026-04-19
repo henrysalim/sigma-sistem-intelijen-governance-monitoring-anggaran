@@ -1,7 +1,7 @@
 import * as sdk from "microsoft-cognitiveservices-speech-sdk";
 
-const speechKey = process.env.AZURE_SPEECH_KEY!;
-const speechRegion = process.env.AZURE_SPEECH_REGION!;
+const speechKey = process.env.AZURE_SPEECH_KEY;
+const speechRegion = process.env.AZURE_SPEECH_REGION;
 
 /**
  * Convert text to speech audio (for narasi, accessibility).
@@ -11,6 +11,11 @@ const speechRegion = process.env.AZURE_SPEECH_REGION!;
  * @returns {Promise<Buffer>} WAV audio buffer
  */
 export function textToSpeech(text: string, lang = "id-ID"): Promise<Buffer> {
+  if (!speechKey || !speechRegion) {
+    throw new Error(
+      "AZURE_SPEECH_KEY or AZURE_SPEECH_REGION is missing from environment variables.",
+    );
+  }
   return new Promise((resolve, reject) => {
     const speechConfig = sdk.SpeechConfig.fromSubscription(
       speechKey,
