@@ -55,7 +55,7 @@ export async function classifyInfrastructureImage(buffer: Buffer, originalName?:
     throw new Error("Missing AZURE_CV_ENDPOINT or AZURE_CV_KEY");
   }
 
-  const analyzeUrl = `${cvEndpoint.replace(/\/$/, "")}/vision/v3.2/analyze?visualFeatures=Tags,Description,Objects`;
+  const analyzeUrl = `${cvEndpoint.replace(/\/$/, "")}/vision/v3.2/analyze?visualFeatures=Tags,Description`;
 
   const res = await nodeFetch(analyzeUrl, {
     method: "POST",

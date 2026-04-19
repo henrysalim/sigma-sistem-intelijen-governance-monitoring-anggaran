@@ -18,7 +18,7 @@ export async function classifyInfrastructureImage(imageBuffer: Buffer) {
     throw new Error("Missing AZURE_CV_ENDPOINT or AZURE_CV_KEY");
   }
 
-  const analyzeUrl = `${cvEndpoint.replace(/\/$/, "")}/vision/v3.2/analyze?visualFeatures=Tags,Description,Objects`;
+  const analyzeUrl = `${cvEndpoint.replace(/\/$/, "")}/vision/v3.2/analyze?visualFeatures=Tags,Description`;
 
   // Node's fetch expects a body type compatible with BodyInit; convert Buffer to ArrayBuffer
   const temp = imageBuffer.buffer.slice(imageBuffer.byteOffset, imageBuffer.byteOffset + imageBuffer.byteLength) as ArrayBuffer;

@@ -15,10 +15,33 @@ export async function POST(req: Request) {
 
     const result = await classifyInfrastructureImage(buffer);
 
+    // Sanitize classification strings to remove any unexpected HTML-like tags
+    const sanitize = (s: any) => {
+      if (typeof s !== "string") return s;
+      return s.replace(/<[^>]*>/g, "").trim();
+    };
+
+    const classification = result || {};
+    if (classification.topPrediction && classification.topPrediction.tagName) {
+      classification.topPrediction.tagName = sanitize(classification.topPrediction.tagName);
+    }
+    if (Array.isArray(classification.allPredictions)) {
+      classification.allPredictions = classification.allPredictions.map((p: any) => ({
+        ...p,
+        tagName: sanitize(p.tagName),
+      }));
+    }
+    if (Array.isArray(classification.captions)) {
+      classification.captions = classification.captions.map((c: any) => ({
+        ...c,
+        text: sanitize(c.text),
+      }));
+    }
+
     return NextResponse.json({
       success: true,
       fileName: file.name,
-      classification: result,
+      classification,
     });
   } catch (error: any) {
     console.error(error);
