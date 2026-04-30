@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import Sidebar from "./components/Sidebar";
-
+ 
 const inter = Inter({
   variable: "--font-inter",
   subsets: ["latin"],
@@ -13,6 +13,9 @@ export const metadata: Metadata = {
   title: "SIGMA — Sistem Intelijen Governance & Monitoring Anggaran",
   description:
     "Platform terpadu yang menggabungkan forensik keuangan dan intelijen regulasi untuk tata kelola yang transparan.",
+  other: {
+    'dicoding:email': "liviajunike1606@gmail.com"
+  }
 };
 
 export default function RootLayout({
